@@ -1,0 +1,21 @@
+{
+  "role": "product_manager",
+  "questions": [
+    {
+      "topic": "Product Strategy",
+      "difficulty": "HARD",
+      "type": "SITUATIONAL",
+      "question_text": "How would you prioritize features when you have limited engineering resources?",
+      "ideal_answer": "Use framework like RICE (Reach, Impact, Confidence, Effort) or value vs. effort matrix. Consider business goals, user needs, technical dependencies, and strategic alignment.",
+      "tags": ["prioritization", "strategy", "decision-making"]
+    },
+    {
+      "topic": "Stakeholder Management",
+      "difficulty": "MEDIUM",
+      "type": "BEHAVIORAL",
+      "question_text": "Tell me about a time when stakeholders disagreed on product direction. How did you handle it?",
+      "ideal_answer": "Should demonstrate: gathering perspectives, using data to inform decisions, finding common ground, clear communication, making tough calls when needed.",
+      "tags": ["stakeholders", "conflict-resolution", "leadership"]
+    }
+  ]
+}

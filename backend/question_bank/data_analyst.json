@@ -1,0 +1,29 @@
+{
+  "role": "data_analyst",
+  "questions": [
+    {
+      "topic": "SQL",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "Write a SQL query to find the second highest salary from an Employee table.",
+      "ideal_answer": "SELECT MAX(salary) FROM Employee WHERE salary < (SELECT MAX(salary) FROM Employee). Alternative: Use LIMIT with OFFSET or ROW_NUMBER() window function.",
+      "tags": ["sql", "queries", "problem-solving"]
+    },
+    {
+      "topic": "Data Visualization",
+      "difficulty": "EASY",
+      "type": "TECHNICAL",
+      "question_text": "When would you use a bar chart versus a line chart?",
+      "ideal_answer": "Bar charts for comparing discrete categories or groups. Line charts for showing trends over continuous time periods or ordered sequences.",
+      "tags": ["visualization", "fundamentals"]
+    },
+    {
+      "topic": "Statistics",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "Explain the difference between correlation and causation.",
+      "ideal_answer": "Correlation shows relationship between variables but doesn't prove one causes the other. Causation requires controlled experiments, temporal precedence, and ruling out confounding variables.",
+      "tags": ["statistics", "fundamentals"]
+    }
+  ]
+}

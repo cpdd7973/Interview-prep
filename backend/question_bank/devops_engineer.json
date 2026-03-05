@@ -1,0 +1,21 @@
+{
+  "role": "devops_engineer",
+  "questions": [
+    {
+      "topic": "CI/CD",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "Explain the difference between continuous delivery and continuous deployment.",
+      "ideal_answer": "Continuous delivery: code is always in deployable state, but deployment requires manual approval. Continuous deployment: every change that passes tests is automatically deployed to production.",
+      "tags": ["cicd", "automation", "fundamentals"]
+    },
+    {
+      "topic": "Infrastructure",
+      "difficulty": "HARD",
+      "type": "TECHNICAL",
+      "question_text": "How would you design a highly available system across multiple regions?",
+      "ideal_answer": "Multi-region deployment, load balancing, database replication, CDN, health checks, failover mechanisms, disaster recovery plan, monitoring and alerting.",
+      "tags": ["infrastructure", "high-availability", "system-design"]
+    }
+  ]
+}

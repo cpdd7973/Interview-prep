@@ -1,0 +1,642 @@
+"""
+FastAPI main application entry point.
+Handles all HTTP endpoints and lifecycle management.
+"""
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from sqlalchemy.orm import Session
+import logging
+import tempfile
+import os
+import asyncio
+import json
+import base64
+
+from config import settings
+from database import init_db, get_db
+from scheduler import start_scheduler, shutdown_scheduler
+from mcp_servers.session_mcp import session_mcp
+
+# Configure logging
+logging.basicConfig(
+    level=settings.log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# Direct file logging for all modules
+logger = logging.getLogger(__name__)
+
+os.makedirs("logs", exist_ok=True)
+LOG_PATH = "logs/backend.log"
+LATEST_LOG_PATH = "logs/latest.log"
+
+# Write handler — clears on restart
+file_handler = logging.FileHandler(LOG_PATH, mode="w", encoding="utf-8")
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Overwrite handler for just this run
+latest_file_handler = logging.FileHandler(LATEST_LOG_PATH, mode="w", encoding="utf-8")
+latest_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# CRITICAL: Filter out watchfiles logger from file handlers to prevent
+# log-write → file-change-detected → log-write infinite loop
+class ExcludeWatchfilesFilter(logging.Filter):
+    def filter(self, record):
+        return not record.name.startswith('watchfiles')
+
+file_handler.addFilter(ExcludeWatchfilesFilter())
+latest_file_handler.addFilter(ExcludeWatchfilesFilter())
+
+# Attach to root logger
+root_logger = logging.getLogger()
+root_logger.addHandler(file_handler) 
+root_logger.addHandler(latest_file_handler)
+
+logger.setLevel(logging.DEBUG)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifecycle manager."""
+    # Startup
+    logger.info("Starting Interview Agent System...")
+    init_db()
+    start_scheduler()
+    logger.info("System ready")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down...")
+    shutdown_scheduler()
+    logger.info("Shutdown complete")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="Interview Agent System",
+    description="MCP-based AI interview preparation system",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "interview-agent-system",
+        "version": "1.0.0"
+    }
+
+
+@app.get("/health/ffmpeg")
+async def check_ffmpeg():
+    """Check if ffmpeg is installed and available."""
+    import subprocess
+    try:
+        # Check if ffmpeg is available
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, check=True)
+        return {
+            "status": "available",
+            "version": result.stdout.splitlines()[0] if result.stdout else "unknown"
+        }
+    except Exception as e:
+        return {
+            "status": "unavailable",
+            "error": str(e)
+        }
+
+
+# Room status endpoint (for time gate polling)
+@app.get("/api/room/{room_id}/status")
+async def get_room_status(room_id: str):
+    """
+    Get current status of an interview room.
+    Used by frontend for time gate polling.
+    """
+    result = session_mcp.get_session(room_id)
+    return result
+
+
+@app.post("/api/interviews/schedule")
+async def schedule_interview(interview_data: dict):
+    """
+    Schedule a new interview.
+    Called by admin dashboard.
+    """
+    from agents.orchestrator import interview_graph
+    
+    # Run the orchestrator graph with PENDING status to trigger the scheduler node
+    initial_state = {
+        "candidate_email": interview_data.get("candidate_email"),
+        "candidate_name": interview_data.get("candidate_name"),
+        "job_role": interview_data.get("job_role"),
+        "company": interview_data.get("company"),
+        "interviewer_designation": interview_data.get("interviewer_designation"),
+        "scheduled_at": interview_data.get("scheduled_at"),
+        "status": "PENDING",
+        "messages": [],
+        "questions_asked": [],
+        "questions_state": {}
+    }
+    
+    try:
+        # LangGraph invoke - since scheduler_node is sync, it makes HTTP calls that will block the event loop
+        # We MUST wrap it in asyncio.to_thread to prevent freezing active WebSockets
+        import asyncio
+        result = await asyncio.to_thread(interview_graph.invoke, initial_state)
+        
+        if result.get("error"):
+            return {
+                "success": False,
+                "error": result["error"]
+            }
+            
+        return {
+            "success": True,
+            "room_id": result.get("room_id"),
+            "status": result.get("status")
+        }
+    except Exception as e:
+        logger.error(f"Error scheduling interview via graph: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# List interviews endpoint
+@app.get("/api/interviews")
+async def list_interviews(status: str = None):
+    """
+    List all interviews with optional status filter.
+    """
+    from database import SessionStatus
+    
+    status_enum = None
+    if status:
+        try:
+            status_enum = SessionStatus[status.upper()]
+        except KeyError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    
+    result = session_mcp.list_sessions(status=status_enum)
+    return result
+
+
+# Cancel interview endpoint
+@app.post("/api/interviews/{room_id}/cancel")
+async def cancel_interview(room_id: str):
+    """
+    Cancel a scheduled interview.
+    """
+    from database import SessionStatus
+    
+    # Update status to CANCELLED
+    result = session_mcp.update_status({
+        "room_id": room_id,
+        "status": SessionStatus.CANCELLED
+    })
+    
+    if result["success"]:
+        # Cancel scheduler job
+        session_mcp.cancel_scheduler_job(room_id)
+    
+    return result
+
+
+# Get transcript endpoint
+@app.get("/api/interviews/{room_id}/transcript")
+async def get_transcript(room_id: str):
+    """
+    Get full transcript for an interview.
+    """
+    result = session_mcp.get_transcript(room_id)
+    return result
+
+
+# Questions endpoints
+@app.get("/api/questions")
+async def get_questions(role: str = None):
+    """Get questions by role."""
+    from mcp_servers.question_bank_mcp import question_bank_mcp, GetQuestionsInput
+    
+    if not role:
+        return {"success": False, "error": "Role parameter is required"}
+        
+    result = question_bank_mcp.get_questions_by_role(GetQuestionsInput(role=role, limit=50))
+    return result
+
+
+@app.post("/api/questions")
+async def add_question(question_data: dict):
+    """Add a new question."""
+    from mcp_servers.question_bank_mcp import question_bank_mcp, AddQuestionInput
+    from database import DifficultyLevel
+    
+    try:
+        difficulty_enum = DifficultyLevel[question_data.get("difficulty", "MEDIUM").upper()]
+        
+        input_data = AddQuestionInput(
+            role=question_data.get("role"),
+            topic=question_data.get("topic"),
+            difficulty=difficulty_enum,
+            question_text=question_data.get("question_text"),
+            ideal_answer=question_data.get("ideal_answer"),
+            tags=question_data.get("tags")
+        )
+        
+        result = question_bank_mcp.add_question(input_data)
+        return result
+    except Exception as e:
+        logger.error(f"Error adding question: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# Evaluation endpoint
+@app.get("/api/evaluations/{room_id}")
+async def get_evaluation(room_id: str):
+    """Get evaluation report for an interview."""
+    from database import SessionLocal, Evaluation, InterviewSession
+    
+    db: Session = SessionLocal()
+    try:
+        eval_record = db.query(Evaluation).filter(Evaluation.room_id == room_id).first()
+        session_record = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+        
+        if not eval_record or not session_record:
+            return {"success": False, "error": "Evaluation not found for this room"}
+            
+        return {
+            "success": True,
+            "evaluation": {
+                "candidate_name": session_record.candidate.name,
+                "job_role": session_record.job_role,
+                "company": session_record.company,
+                "scheduled_at": session_record.scheduled_at.isoformat(),
+                "completed_at": session_record.completed_at.isoformat() if session_record.completed_at else None,
+                "technical_score": eval_record.technical_score,
+                "communication_score": eval_record.communication_score,
+                "problem_solving_score": eval_record.problem_solving_score,
+                "behavioral_score": eval_record.behavioral_score,
+                "confidence_score": eval_record.confidence_score,
+                "overall_score": eval_record.overall_score,
+                "qualitative_feedback": eval_record.qualitative_feedback,
+                "report_path": eval_record.report_path
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching evaluation: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+from fastapi import WebSocket, WebSocketDisconnect
+import tempfile
+import os
+
+@app.websocket("/api/interviews/{room_id}/ws")
+async def interview_websocket(websocket: WebSocket, room_id: str):
+    """
+    WebSocket endpoint for real-time WebRTC/Audio streaming between Candidate and Agent.
+    Receives audio chunks, runs STT, feeds Dialog Agent, runs TTS, and returns audio.
+    """
+    logger.info(f"WebSocket connection attempt for room: {room_id}")
+    await websocket.accept()
+    logger.info(f"WebSocket connection accepted for room: {room_id}")
+    
+    from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
+    from agents.state import InterviewState
+    from agents.interviewer_agent import interviewer_node
+    from database import SessionLocal, InterviewSession, SessionStatus, Speaker
+    from langchain_core.messages import HumanMessage, AIMessage
+    from mcp_servers.session_mcp import session_mcp, UpdateStatusInput, LogTranscriptInput
+    from agents.orchestrator import interview_graph
+    
+    # 1. Fetch Session (in a thread to avoid blocking async loop)
+    def fetch_session():
+        db: Session = SessionLocal()
+        session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+        if not session:
+            db.close()
+            return None
+        data = {
+            "candidate_name": session.candidate.name,
+            "job_role": session.job_role,
+            "company": session.company,
+            "interviewer_designation": session.interviewer_designation
+        }
+        db.close()
+        return data
+
+    import asyncio
+    session_data = await asyncio.to_thread(fetch_session)
+    logger.info(f"Session data fetch result: {session_data}")
+    
+    if not session_data:
+        await websocket.close(code=1008, reason="Session not found")
+        return
+        
+    candidate_name = session_data["candidate_name"]
+    job_role = session_data["job_role"]
+    company = session_data["company"]
+    interviewer_designation = session_data["interviewer_designation"]
+    
+    # 2. Reconstruct Chat State
+    transcript_resp = await asyncio.to_thread(session_mcp.get_transcript, room_id)
+    existing_messages = []
+    questions_asked = []
+    questions_state = {}
+    current_q_id = None
+    
+    if transcript_resp.get("success"):
+        for chunk in transcript_resp["transcript"]:
+            if chunk["speaker"] == "AI":
+                existing_messages.append(AIMessage(content=chunk["content"]))
+            else:
+                existing_messages.append(HumanMessage(content=chunk["content"]))
+            
+            qid = chunk.get("question_id")
+            if qid is not None:
+                current_q_id = qid
+                if qid not in questions_asked:
+                    questions_asked.append(qid)
+                questions_state[qid] = "asked"
+                
+    chat_state: InterviewState = {
+        "candidate_email": "",
+        "candidate_name": candidate_name,
+        "job_role": job_role,
+        "company": company,
+        "interviewer_designation": interviewer_designation,
+        "scheduled_at": "",
+        "status": "ACTIVE",
+        "messages": existing_messages,
+        "questions_asked": questions_asked,
+        "questions_state": questions_state,
+        "current_question_id": current_q_id
+    }
+    
+    try:
+        # Wait for the frontend to signal it is ready before sending the initial greeting
+        logger.info(f"Waiting for frontend 'start' signal for room {room_id}...")
+        
+        # json already imported at top level
+        while True:
+            init_msg = await websocket.receive()
+            if init_msg.get("text"):
+                try:
+                    init_data = json.loads(init_msg["text"])
+                    if init_data.get("type") == "start":
+                        logger.info("Frontend ready signal received. Proceeding with initial greeting.")
+                        break
+                except json.JSONDecodeError:
+                    pass
+
+        # 3. Initial Greeting — ALWAYS fire on new WebSocket connect
+        # Clear stale messages from previous sessions to start fresh
+        chat_state["messages"] = []
+        logger.info(f"Sending initial greeting for room {room_id}")
+        try:
+            # Run agent with timeout to prevent infinite hang
+            agent_result = await asyncio.wait_for(
+                interviewer_node(chat_state),
+                timeout=60.0
+            )
+            logger.info(f"interviewer_node returned: {list(agent_result.keys())}")
+            
+            # Update local state
+            if "messages" in agent_result:
+                chat_state["messages"].extend(agent_result["messages"])
+            if "current_question_id" in agent_result:
+                chat_state["current_question_id"] = agent_result["current_question_id"]
+            if "questions_asked" in agent_result:
+                chat_state["questions_asked"].extend(agent_result["questions_asked"])
+                
+            initial_response = agent_result["messages"][-1].content
+        except asyncio.TimeoutError:
+            logger.error("interviewer_node timed out after 60s — using fallback greeting")
+            initial_response = f"Hello {candidate_name}! Welcome to your interview for the {job_role} position at {company}. I'm your interviewer today. Let's begin — could you start by telling me about your background and experience?"
+            chat_state["messages"].append(AIMessage(content=initial_response))
+        except Exception as agent_err:
+            logger.error(f"interviewer_node failed: {agent_err}", exc_info=True)
+            initial_response = f"Hello {candidate_name}! Welcome to your interview for the {job_role} position at {company}. I'm your interviewer today. Let's begin — could you start by telling me about your background and experience?"
+            chat_state["messages"].append(AIMessage(content=initial_response))
+        
+        logger.info(f"Initial AI Greeting: {initial_response}")
+        
+        # Send AI text IMMEDIATELY
+        logger.info("Sending initial transcript to websocket...")
+        await websocket.send_json({"type": "transcript", "speaker": "AI", "text": initial_response})
+        
+        await asyncio.to_thread(
+            session_mcp.log_transcript_chunk,
+            LogTranscriptInput(room_id=room_id, speaker=Speaker.AI, content=initial_response, question_id=chat_state.get("current_question_id"))
+        )
+        
+        # TTS synthesis — wrapped in try/except so text still works even if TTS fails
+        try:
+            logger.info("Synthesizing initial greeting audio...")
+            tts_result = await asyncio.wait_for(
+                voice_mcp.synthesize_speech(SynthesizeSpeechInput(text=initial_response)),
+                timeout=30.0
+            )
+            if tts_result.get("success"):
+                audio_path = tts_result["audio_path"]
+                logger.info(f"Sending {os.path.getsize(audio_path)} bytes of initial audio...")
+                with open(audio_path, "rb") as f:
+                    mp3_bytes = f.read()
+                await websocket.send_bytes(mp3_bytes)
+                os.remove(audio_path)
+                logger.info("Initial greeting sent successfully")
+            else:
+                logger.error(f"Initial TTS failed: {tts_result}")
+        except asyncio.TimeoutError:
+            logger.error("TTS timed out after 30s — text greeting was already sent")
+        except Exception as tts_err:
+            logger.error(f"TTS error: {tts_err}")
+    except Exception as e:
+        logger.error(f"Error sending initial greeting: {e}", exc_info=True)
+
+    try:
+        # Loop for continuous conversation
+        audio_buffer = []
+        MAX_BUFFER_CHUNKS = 4 # ~8 seconds of audio before forced transcription
+        
+        while True:
+            try:
+                # 1. Receive message from frontend
+                message = await websocket.receive()
+                
+                if message.get("type") == "websocket.disconnect":
+                    logger.info(f"Frontend disconnected gracefully from room {room_id}")
+                    break
+                    
+                if "text" in message:
+                    try:
+                        data = json.loads(message["text"])
+                        msg_type = data.get("type", "")
+                        
+                        # Dmitri's heartbeat: respond to ping with pong
+                        if msg_type == "ping":
+                            await websocket.send_json({"type": "pong"})
+                            continue
+                        
+                        # Frontend signals readiness
+                        if msg_type == "start":
+                            logger.info(f"[{room_id}] Frontend signalled ready")
+                            continue
+                        
+                        if msg_type == "browser_stt":
+                            spoken_text = data.get("text", "")
+                            if len(spoken_text.strip()) < 3:
+                                continue
+                            logger.info(f"[{room_id} (Browser STT)]: {spoken_text}")
+                        else:
+                            continue
+                    except Exception:
+                        continue
+                        
+                elif "bytes" in message:
+                    # Each blob is a complete WebM file (frontend stop/restarts MediaRecorder)
+                    audio_data = message["bytes"]
+                    
+                    if len(audio_data) < 1000:
+                        # Too small — probably silence
+                        continue
+                    
+                    logger.info(f"[{room_id}] Transcribing {len(audio_data)} bytes via Groq Whisper...")
+                    
+                    try:
+                        result = await asyncio.to_thread(
+                            voice_mcp.transcribe_audio_groq,
+                            audio_data
+                        )
+                        
+                        if result.get("success") and result.get("text", "").strip():
+                            spoken_text = result["text"].strip()
+                            if len(spoken_text) < 3:
+                                continue
+                            
+                            # ECHO FILTER: Reject common speaker-echo transcriptions.
+                            # When the mic picks up the AI's voice from speakers, Whisper
+                            # typically transcribes it as "Thank you.", "you", etc.
+                            # Real candidate answers have at least 5 words.
+                            word_count = len(spoken_text.split())
+                            echo_phrases = {"thank you", "thank you.", "you", "okay", "okay.", "yes", "yes.", "no", "no.", "um", "uh"}
+                            if word_count < 5 and spoken_text.lower().strip(".!?,") in echo_phrases:
+                                logger.debug(f"[{room_id}] Filtered echo: '{spoken_text}' (likely speaker echo, not candidate)")
+                                continue
+                            
+                            logger.info(f"[{room_id} (Groq Whisper)]: {spoken_text}")
+                        else:
+                            logger.debug(f"[{room_id}] Whisper returned empty/failed: {result}")
+                            continue
+                    except Exception as e:
+                        logger.error(f"[{room_id}] Groq Whisper error: {e}")
+                        continue
+                else:
+                    continue
+                    
+                # Send transcription to Frontend chat IMMEDIATELY
+                await websocket.send_json({"type": "transcript", "speaker": candidate_name, "text": spoken_text})
+                
+                await asyncio.to_thread(
+                    session_mcp.log_transcript_chunk,
+                    LogTranscriptInput(room_id=room_id, speaker=Speaker.CANDIDATE, content=spoken_text, question_id=chat_state.get("current_question_id"))
+                )
+                
+                # 4. Feed into Agent Dialog Manager
+                chat_state["messages"].append(HumanMessage(content=spoken_text))
+                
+                agent_result = await interviewer_node(chat_state)
+                
+                # Update local state
+                if "messages" in agent_result:
+                    chat_state["messages"].extend(agent_result["messages"])
+                if "current_question_id" in agent_result:
+                    chat_state["current_question_id"] = agent_result["current_question_id"]
+                if "questions_asked" in agent_result:
+                    chat_state["questions_asked"].extend(agent_result["questions_asked"])
+                    
+                ai_response = agent_result["messages"][-1].content
+                logger.info(f"[AI]: {ai_response}")
+                
+                # 5. Send AI text back IMMEDIATELY (Before TTS to reduce perceived latency)
+                await websocket.send_json({"type": "transcript", "speaker": "AI", "text": ai_response})
+                
+                await asyncio.to_thread(
+                    session_mcp.log_transcript_chunk,
+                    LogTranscriptInput(room_id=room_id, speaker=Speaker.AI, content=ai_response, question_id=chat_state.get("current_question_id"))
+                )
+
+                
+                # 6. Synthesize TTS (Now async)
+                tts_result = await voice_mcp.synthesize_speech(SynthesizeSpeechInput(text=ai_response))
+                if tts_result.get("success"):
+                    audio_path = tts_result["audio_path"]
+                    
+                    logger.info(f"Sending AI audio payload back to client...")
+                    # Send back the raw synthesized audio
+                    with open(audio_path, "rb") as f:
+                        mp3_bytes = f.read()
+                    
+                    await websocket.send_bytes(mp3_bytes)
+                    os.remove(audio_path)
+                else:
+                    logger.error(f"TTS Synthesis failed: {tts_result}")
+                    
+                # 7. Check if interview is completed
+                if agent_result.get("status") == "COMPLETED":
+                    chat_state["status"] = "COMPLETED"
+                    logger.info(f"Interview {room_id} completed. Updating status and triggering evaluation.")
+                    await asyncio.to_thread(
+                        session_mcp.update_status,
+                        UpdateStatusInput(room_id=room_id, status=SessionStatus.COMPLETED)
+                    )
+                    await asyncio.to_thread(interview_graph.invoke, chat_state)
+                    await websocket.close(code=1000, reason="Interview Completed")
+                    break
+
+            except Exception as inner_e:
+                import traceback
+                logger.error(f"Error during audio processing pipeline loop: {inner_e}")
+                logger.error(traceback.format_exc())
+                
+                # BREAK loop on critical socket errors to prevent infinite spinning
+                error_msg = str(inner_e)
+                if any(x in error_msg for x in ["WebSocket is not connected", "already closed", "once a disconnect message", "ConnectionClosed"]):
+                    logger.warning(f"Socket closed ({error_msg}). Breaking loop.")
+                    break
+                
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for room {room_id}")
+    except Exception as e:
+        logger.error(f"WebSocket critical error: {e}")
+        try:
+            await websocket.close(code=1011)
+        except:
+            pass
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+        log_level=settings.log_level.lower()
+    )
+

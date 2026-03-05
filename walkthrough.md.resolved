@@ -1,0 +1,95 @@
+# Full System Audit — 3 Broken Systems Fixed
+
+## Executive Summary
+
+The interview loop was broken by a **chain reaction**: watchfiles reload floods → WebSocket killed before AI could respond → mic killed by `no-speech` → transcript invisible. Five root-cause bugs were fixed across 3 files.
+
+---
+
+## Bug 1: SpeechRecognition Dies on `no-speech`
+
+| | |
+|---|---|
+| **File** | [InterviewRoom.jsx](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/pages/InterviewRoom.jsx#L180-L184) |
+| **Root Cause** | `recognition.onerror` explicitly **excluded** `no-speech` from the restart logic. When the user was quiet (listening to the AI), Chrome fires `no-speech` → mic session dies permanently → no more audio captured → AI never gets input. |
+| **Fix** | Restart recognition on **ALL** errors including `no-speech`, gated only by `recognitionStoppedRef` (a ref, not a stale closure). |
+
+## Bug 2: Stale [viewState](file:///c:/Users/HP/Documents/Interview-prep/backend/agents/state.py#8-38) Closure Kills Restart
+
+| | |
+|---|---|
+| **File** | [InterviewRoom.jsx](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/pages/InterviewRoom.jsx#L187-L191) |
+| **Root Cause** | `recognition.onend` and [onerror](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/pages/InterviewRoom.jsx#188-199) callbacks captured [viewState](file:///c:/Users/HP/Documents/Interview-prep/backend/agents/state.py#8-38) at creation time inside the `useEffect`. When [viewState](file:///c:/Users/HP/Documents/Interview-prep/backend/agents/state.py#8-38) later changes (e.g. re-render), the closure still holds the **old** value. If it was anything other than `'ACTIVE'` at mount, recognition never restarts. |
+| **Fix** | Replaced `viewState === 'ACTIVE'` checks with `!recognitionStoppedRef.current` — a ref that always reflects the latest value without closure staleness. Set to `true` in the cleanup function. |
+
+## Bug 3: ChatInterface Text Invisible on Dark Background
+
+| | |
+|---|---|
+| **File** | [ChatInterface.jsx](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/components/ChatInterface.jsx) |
+| **Root Cause** | Component used CSS class names (`.message`, `.message--ai`, `.chat-messages`) with **no corresponding CSS file or inline styles**. On the dark `#1a202c` interview background, browser-default black text on transparent background is completely invisible. |
+| **Fix** | Rewrote entire component with inline styles: light text (`#e2e8f0`), dark chat bubbles (`#2d3748` for AI, `#2b6cb0` for candidate), proper labels, auto-scroll, and an empty-state placeholder. |
+
+## Bug 4: Watchfiles Infinite Reload Loop
+
+| | |
+|---|---|
+| **File** | [main.py](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#L36-L43) |
+| **Root Cause** | The root Python logger wrote `watchfiles.main - INFO - 1 change detected` to [backend.log](file:///c:/Users/HP/Documents/Interview-prep/backend/backend.log) → this log write changed the file → `watchfiles` detected the change → logged another `1 change detected` → infinite loop at 3Hz. This flooded the event loop and caused `uvicorn` to restart the server mid-WebSocket, killing the connection before the [start](file:///c:/Users/HP/Documents/Interview-prep/backend/agents/orchestrator.py#42-53) signal arrived. |
+| **Fix** | Added [ExcludeWatchfilesFilter](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#43-46) to both file handlers so `watchfiles.*` log records never touch the disk. This breaks the feedback loop entirely. |
+
+## Bug 5: Reload Excludes Too Weak
+
+| | |
+|---|---|
+| **File** | [main.py](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#L609-L614) |
+| **Root Cause** | `reload_excludes` used `"logs/*"` glob pattern which `watchfiles` didn't match correctly. Also missed [.db](file:///c:/Users/HP/Documents/Interview-prep/backend/scheduler_jobs.db) and `.db-journal` files which SQLite writes during session operations, triggering additional spurious reloads. |
+| **Fix** | Added `reload_dirs=["."]` and expanded excludes to `["logs", "*.webm", "*.mp3", "*.tmp", "*.log", "*.db", "*.db-journal"]`. |
+
+## Bug 6: Uvicorn Auto-Reload Still Triggering Disconnects
+
+| | |
+|---|---|
+| **File** | [main.py](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#L609) |
+| **Root Cause** | Even with tightened excludes, executing `watchfiles` in the parent process still sometimes caused file-change detections during active LLM evaluation, instantly killing the WebSocket. |
+| **Fix** | Disabled `reload=True` entirely. In a stateful WebSocket + LLM environment, auto-reloading the master process guarantees dropped connections. Requires manual restart. |
+
+## Bug 7: Stale Transcript Blocks Initial AI Greeting
+
+| | |
+|---|---|
+| **File** | [main.py](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#L406) |
+| **Root Cause** | A guard `if not existing_messages:` prevented the AI from greeting the candidate if the database contained any previous transcript data for that room ID. This meant second attempts at testing always skipped the greeting loop. |
+| **Fix** | Removed the `if not existing_messages:` guard and explicitly wipe the in-memory `chat_state["messages"] = []` on a fresh connect so the initial greeting always triggers. |
+
+## Bug 8: Python 3.13 Local Variable Shadowing in `finally`
+
+| | |
+|---|---|
+| **File** | [main.py](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#L515) |
+| **Root Cause** | A local `import os` inside the `finally` block of the VAD loop caused Python 3.13 to treat [os](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/pages/InterviewRoom.jsx#257-263) as a local scope variable for the entire [interview_websocket](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#309-628) function. When `os.path.getsize()` was called *earlier* in the function (during TTS execution), it threw `cannot access local variable 'os' where it is not associated with a value`. |
+| **Fix** | Removed 5 inline imports (`import os`, [json](file:///c:/Users/HP/Documents/Interview-prep/frontend/package.json), `base64`, `tempfile`) from inside the websocket handler and lifted them to the global top-level imports. |
+
+---
+
+## The Full Chain (Confirmed)
+
+```mermaid
+graph TD
+    A["Log write to backend.log"] -->|watchfiles detects| B["Server reload triggered"]
+    B -->|kills| C["WebSocket disconnected"]
+    C -->|before| D["'start' signal arrives"]
+    D -->|so| E["AI greeting never sent"]
+    E -->|meanwhile| F["no-speech error fires"]
+    F -->|excluded from restart| G["Mic dies permanently"]
+    G -->|no input to AI| H["AI generates nothing"]
+    H -->|but even if it did| I["ChatInterface text invisible"]
+```
+
+## Files Changed
+
+| File | Changes |
+|---|---|
+| [InterviewRoom.jsx](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/pages/InterviewRoom.jsx) | `recognitionStoppedRef`, `continuous: true`, `interimResults: true`, `lang: 'en-US'`, proper [onresult](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/pages/InterviewRoom.jsx#176-187) loop, restart on all errors |
+| [ChatInterface.jsx](file:///c:/Users/HP/Documents/Interview-prep/frontend/src/components/ChatInterface.jsx) | Full rewrite with inline styles, chat bubbles, dark-mode colors, empty state |
+| [main.py](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py) | [ExcludeWatchfilesFilter](file:///c:/Users/HP/Documents/Interview-prep/backend/main.py#43-46), tightened `reload_excludes`, added `reload_dirs` |

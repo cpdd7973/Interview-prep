@@ -1,0 +1,43 @@
+{
+  "role": "React Developer",
+  "questions": [
+    {
+      "topic": "React Hooks",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "Can you elaborate on the difference between useEffect and useLayoutEffect, and in what scenarios you would choose one over the other?",
+      "ideal_answer": "useEffect runs asynchronously after the render is committed to the screen, making it suitable for fetching data, setting up subscriptions, and manually changing the DOM. useLayoutEffect fires synchronously after all DOM mutations but before the browser paints. It's used when we need to read DOM measurements and mutate the DOM before the user sees the output to prevent visual flickering.",
+      "tags": [
+        "React",
+        "Hooks",
+        "Frontend",
+        "Performance"
+      ]
+    },
+    {
+      "topic": "State Management",
+      "difficulty": "HARD",
+      "type": "TECHNICAL",
+      "question_text": "How do you manage complex state in a large-scale React application, and what are the trade-offs between using Context API versus a global state management library like Redux or Zustand?",
+      "ideal_answer": "For complex state, a dedicated library like Zustand or Redux is better. Context API is great for low-frequency updates like theme or auth state, but it causes re-renders of all consumers when the value changes, which hurts performance for high-frequency state updates. Zustand provides granular subscriptions, and Redux offers predictable unidirectional data flow with excellent dev tools.",
+      "tags": [
+        "React",
+        "State Management",
+        "Redux",
+        "Zustand"
+      ]
+    },
+    {
+      "topic": "Performance Optimization",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "What strategies do you use to optimize the performance of a React application that is experiencing slow renders?",
+      "ideal_answer": "Common strategies include identifying unnecessary re-renders using React DevTools Profiler, wrapping components in React.memo for referential equality checks, memoizing expensive calculations and functions with useMemo and useCallback, implementing code-splitting with React.lazy and Suspense, and virtualizing long lists using libraries like react-window.",
+      "tags": [
+        "React",
+        "Performance",
+        "Optimization"
+      ]
+    }
+  ]
+}

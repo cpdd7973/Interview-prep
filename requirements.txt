@@ -1,0 +1,62 @@
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
+
+# Vector Search
+chromadb==0.4.22
+
+# LLM & AI
+langchain==0.1.4
+langchain-groq==0.0.1
+langchain-google-genai==0.0.6
+langgraph==0.0.20
+
+# Speech
+openai-whisper==20231117
+edge-tts==6.1.9
+pydub==0.25.1
+
+# Scheduling
+apscheduler==3.10.4
+
+# Google APIs
+google-auth==2.27.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.116.0
+
+# HTTP & WebRTC
+httpx==0.26.0
+requests==2.31.0
+
+# PDF Generation
+reportlab==4.0.9
+pypdf==3.17.4
+
+# Utilities
+python-dotenv==1.0.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# CORS
+fastapi-cors==0.0.6
+
+# Date/Time
+python-dateutil==2.8.2
+pytz==2024.1
+
+# Audio Processing
+numpy==1.24.3
+soundfile==0.12.1
+
+# Testing (optional)
+pytest==7.4.4
+pytest-asyncio==0.23.3
+httpx==0.26.0

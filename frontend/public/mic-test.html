@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Microphone Test &amp; Selector</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a202c; color: #e2e8f0; padding: 40px; max-width: 700px; margin: 0 auto; }
+        h1 { color: #63b3ed; }
+        h3 { color: #a0aec0; margin-top: 24px; }
+        .level-bar { width: 100%; height: 30px; background: #2d3748; border-radius: 8px; overflow: hidden; margin: 10px 0; }
+        .level-fill { height: 100%; transition: width 0.1s; border-radius: 8px; }
+        .log { background: #0f172a; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; max-height: 250px; overflow-y: auto; white-space: pre-wrap; margin-top: 12px; }
+        button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; margin: 5px; font-weight: 600; }
+        .btn-start { background: #48bb78; color: white; font-size: 18px; padding: 16px 32px; }
+        .btn-record { background: #3182ce; color: white; }
+        .btn-play { background: #d69e2e; color: white; }
+        select { width: 100%; padding: 12px; font-size: 15px; border-radius: 8px; background: #2d3748; color: white; border: 1px solid #4a5568; margin: 8px 0; }
+        .info { background: #2d3748; padding: 12px; border-radius: 8px; margin: 10px 0; font-size: 14px; }
+        .step { background: #2d3748; border-left: 4px solid #3182ce; padding: 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+        .step-num { color: #63b3ed; font-weight: bold; font-size: 18px; }
+        .success { border-left-color: #48bb78; }
+        .warn { border-left-color: #ecc94b; }
+    </style>
+</head>
+<body>
+    <h1>🎙️ Microphone Test &amp; Device Selector</h1>
+    
+    <div class="step">
+        <span class="step-num">Step 1:</span> Click to grant mic permission and discover devices
+        <br><br>
+        <button class="btn-start" onclick="grantPermissionAndListDevices()">🎙️ Grant Permission &amp; List Devices</button>
+    </div>
+    
+    <div class="step" id="step2" style="display:none;">
+        <span class="step-num">Step 2:</span> Select your PHYSICAL microphone (NOT virtual cable)
+        <br><br>
+        <select id="deviceSelect" onchange="switchDevice()">
+            <option value="">-- Select a microphone --</option>
+        </select>
+        <div id="deviceHint" class="info"></div>
+    </div>
+    
+    <div class="step" id="step3" style="display:none;">
+        <span class="step-num">Step 3:</span> Speak and watch the level bar
+        <h3>Live Audio Level:</h3>
+        <div class="level-bar">
+            <div class="level-fill" id="levelBar" style="width: 0%; background: #e53e3e;"></div>
+        </div>
+        <p id="levelText" style="font-size: 18px; font-weight: bold;">Waiting...</p>
+        
+        <button class="btn-record" onclick="startRecording()" id="recordBtn">🔴 Record 6s &amp; Play Back</button>
+    </div>
+    
+    <h3>Log:</h3>
+    <div class="log" id="log"></div>
+
+    <script>
+        let audioCtx, analyser, micStream, levelInterval;
+        const logEl = document.getElementById('log');
+        
+        function log(msg) {
+            const ts = new Date().toLocaleTimeString();
+            logEl.textContent += `[${ts}] ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        async function grantPermissionAndListDevices() {
+            log("=== GRANTING MIC PERMISSION ===");
+            
+            // Step 1: Get generic permission first (labels are empty without permission)
+            try {
+                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                log("✅ Mic permission granted!");
+                // Stop temp stream immediately
+                tempStream.getTracks().forEach(t => t.stop());
+            } catch(e) {
+                log(`❌ Permission denied: ${e.message}`);
+                return;
+            }
+            
+            // Step 2: NOW enumerate devices (labels will be populated)
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const audioInputs = devices.filter(d => d.kind === 'audioinput');
+            
+            log(`Found ${audioInputs.length} audio input devices:`);
+            
+            const select = document.getElementById('deviceSelect');
+            select.innerHTML = '<option value="">-- Select a microphone --</option>';
+            
+            audioInputs.forEach((d, i) => {
+                const label = d.label || `Device ${i}`;
+                const isVirtual = /virtual|vb-audio|cable|loopback|stereo mix/i.test(label);
+                
+                log(`  ${i}: "${label}" ${isVirtual ? '⚠️ VIRTUAL' : '✅ PHYSICAL'}`);
+                
+                const option = document.createElement('option');
+                option.value = d.deviceId;
+                option.textContent = `${isVirtual ? '⚠️ ' : '✅ '} ${label}`;
+                if (!isVirtual && select.options.length === 1) {
+                    option.selected = true; // Auto-select first physical mic
+                }
+                select.appendChild(option);
+            });
+            
+            document.getElementById('step2').style.display = 'block';
+            document.getElementById('deviceHint').textContent = 
+                '⚠️ = Virtual cable (will record silence). ✅ = Physical microphone.';
+            
+            // Auto-select if a physical mic was found
+            if (select.value) {
+                log(`Auto-selected: "${select.options[select.selectedIndex].textContent}"`);
+                switchDevice();
+            } else {
+                log("⚠️ No physical mic auto-selected. Please choose one from the dropdown.");
+            }
+        }
+        
+        async function switchDevice() {
+            const deviceId = document.getElementById('deviceSelect').value;
+            if (!deviceId) return;
+            
+            // Stop existing stream
+            if (micStream) {
+                micStream.getTracks().forEach(t => t.stop());
+            }
+            if (levelInterval) clearInterval(levelInterval);
+            if (audioCtx) audioCtx.close();
+            
+            const label = document.getElementById('deviceSelect').options[
+                document.getElementById('deviceSelect').selectedIndex
+            ].textContent;
+            log(`\n--- Switching to: ${label} ---`);
+            
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        deviceId: { exact: deviceId },
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: true,
+                    }
+                });
+                
+                const track = micStream.getAudioTracks()[0];
+                const settings = track.getSettings();
+                log(`✅ Connected to: "${track.label}"`);
+                log(`   Sample Rate: ${settings.sampleRate}, Channels: ${settings.channelCount}`);
+                
+                // Setup analyser
+                audioCtx = new AudioContext();
+                await audioCtx.resume();
+                const source = audioCtx.createMediaStreamSource(micStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 512;
+                source.connect(analyser);
+                
+                // Start level monitoring
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                let maxLevel = 0;
+                
+                levelInterval = setInterval(() => {
+                    analyser.getByteTimeDomainData(dataArray);
+                    let sumSq = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        const d = dataArray[i] - 128;
+                        sumSq += d * d;
+                    }
+                    const rms = Math.sqrt(sumSq / dataArray.length);
+                    const level = Math.round(rms);
+                    if (level > maxLevel) maxLevel = level;
+                    
+                    const bar = document.getElementById('levelBar');
+                    bar.style.width = Math.min(level * 3, 100) + '%';
+                    bar.style.backgroundColor = level > 5 ? '#48bb78' : level > 2 ? '#ecc94b' : '#e53e3e';
+                    
+                    document.getElementById('levelText').textContent = 
+                        `Level: ${level} (max: ${maxLevel}) — ${level > 5 ? '✅ VOICE DETECTED!' : level > 2 ? '🟡 Low' : '🔴 SILENT'}`;
+                }, 100);
+                
+                document.getElementById('step3').style.display = 'block';
+                log("✅ Monitoring started — SPEAK NOW!");
+                
+            } catch(e) {
+                log(`❌ Failed to connect to device: ${e.message}`);
+            }
+        }
+        
+        function startRecording() {
+            if (!micStream) return;
+            log("\n--- Recording 6 seconds ---");
+            const chunks = [];
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus' : 'audio/webm';
+            
+            const recorder = new MediaRecorder(micStream, { mimeType });
+            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: mimeType });
+                log(`✅ Recorded ${blob.size} bytes. Playing back...`);
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.onended = () => {
+                    URL.revokeObjectURL(url);
+                    log("🔊 Playback done. Could you hear yourself?");
+                    log("   YES → This device works! Note the device name for the interview.");
+                    log("   NO  → Try selecting a different device from the dropdown.");
+                };
+                audio.play().catch(e => log(`❌ Playback failed: ${e.message}`));
+            };
+            recorder.start();
+            document.getElementById('recordBtn').textContent = '⏺️ Recording... (6s)';
+            document.getElementById('recordBtn').disabled = true;
+            setTimeout(() => {
+                if (recorder.state === 'recording') recorder.stop();
+                document.getElementById('recordBtn').textContent = '🔴 Record 6s & Play Back';
+                document.getElementById('recordBtn').disabled = false;
+            }, 6000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "role": "software_engineer",
+  "questions": [
+    {
+      "topic": "Data Structures",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "Explain the difference between a stack and a queue. When would you use each?",
+      "ideal_answer": "A stack follows LIFO (Last In First Out) principle, useful for function call management, undo operations, and expression evaluation. A queue follows FIFO (First In First Out), ideal for task scheduling, breadth-first search, and handling requests in order.",
+      "tags": ["data-structures", "fundamentals", "algorithms"]
+    },
+    {
+      "topic": "System Design",
+      "difficulty": "HARD",
+      "type": "TECHNICAL",
+      "question_text": "How would you design a URL shortening service like bit.ly? Walk me through your approach.",
+      "ideal_answer": "Key components: hash generation (base62 encoding), database for URL mapping (NoSQL for scalability), caching layer (Redis), load balancer, analytics tracking. Consider collision handling, custom aliases, expiration, and rate limiting.",
+      "tags": ["system-design", "scalability", "architecture"]
+    },
+    {
+      "topic": "Problem Solving",
+      "difficulty": "MEDIUM",
+      "type": "TECHNICAL",
+      "question_text": "Given an array of integers, find two numbers that add up to a specific target. What's your approach?",
+      "ideal_answer": "Use a hash map to store complements. Iterate through array, for each number check if (target - number) exists in map. If yes, return pair. If no, add number to map. Time complexity O(n), space O(n).",
+      "tags": ["algorithms", "hash-map", "problem-solving"]
+    },
+    {
+      "topic": "Teamwork",
+      "difficulty": "EASY",
+      "type": "BEHAVIORAL",
+      "question_text": "Tell me about a time when you had a disagreement with a team member. How did you handle it?",
+      "ideal_answer": "Should demonstrate: active listening, empathy, finding common ground, focusing on the problem not the person, reaching a compromise, maintaining professional relationship.",
+      "tags": ["teamwork", "conflict-resolution", "communication"]
+    },
+    {
+      "topic": "Learning & Growth",
+      "difficulty": "EASY",
+      "type": "BEHAVIORAL",
+      "question_text": "Describe a situation where you had to learn a new technology quickly. What was your approach?",
+      "ideal_answer": "Should show: self-motivation, structured learning approach, using documentation/tutorials, hands-on practice, asking for help when needed, applying knowledge to real problems.",
+      "tags": ["learning", "adaptability", "growth-mindset"]
+    },
+    {
+      "topic": "Debugging",
+      "difficulty": "MEDIUM",
+      "type": "SITUATIONAL",
+      "question_text": "You've deployed a feature to production and users are reporting intermittent errors. How do you approach debugging this?",
+      "ideal_answer": "Check logs and monitoring, reproduce the issue, isolate variables (time-based, user-specific, load-related), use debugging tools, implement additional logging if needed, consider rollback if critical, communicate with team and users.",
+      "tags": ["debugging", "production", "problem-solving"]
+    }
+  ]
+}

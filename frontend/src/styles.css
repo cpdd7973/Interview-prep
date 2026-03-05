@@ -1,0 +1,285 @@
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #f5f5f5;
+}
+
+/* Interview Room Styles */
+.interview-room {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.interview-room.loading,
+.interview-room.error {
+  text-align: center;
+}
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Countdown Timer */
+.countdown-container {
+  text-align: center;
+  max-width: 600px;
+}
+
+.countdown-timer {
+  margin: 40px 0;
+}
+
+.timer-display {
+  font-size: 4rem;
+  font-weight: bold;
+  color: #3498db;
+  margin: 20px 0;
+}
+
+.interview-details {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  text-align: left;
+}
+
+.interview-details p {
+  margin: 10px 0;
+}
+
+/* Waiting Screen */
+.waiting-screen {
+  text-align: center;
+  max-width: 600px;
+}
+
+.waiting-icon {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 30px;
+}
+
+.pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 3px solid #3498db;
+  border-radius: 50%;
+  animation: pulse 2s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.waiting-avatar {
+  font-size: 3rem;
+  line-height: 100px;
+}
+
+.waiting-tips {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-top: 30px;
+  text-align: left;
+}
+
+.waiting-tips ul {
+  list-style: none;
+  margin-top: 15px;
+}
+
+.waiting-tips li {
+  padding: 8px 0;
+}
+
+/* Active Interview */
+.interview-room.active {
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: row; /* Layout side-by-side */
+  flex-wrap: wrap; /* Headers/Controls take full width */
+}
+
+.interview-header, .interview-controls {
+  flex: 0 0 100%; /* Break to new line */
+}
+
+.interview-header {
+  background: #2c3e50;
+  color: white;
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.daily-room-container {
+  flex: 1;
+  width: 100%;
+  height: calc(100vh - 120px);
+}
+
+.chat-container {
+  flex: 0 0 350px;
+  background: white;
+  border-left: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-interface {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  font-size: 14px;
+}
+
+.message {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.message--ai {
+  background: #f0f4f8;
+  border: 1px solid #d9e2ec;
+}
+
+.message--candidate {
+  background: #e6f6ff;
+  border: 1px solid #bae3ff;
+  text-align: right;
+}
+
+.message-speaker {
+  font-weight: bold;
+  font-size: 0.9em;
+  color: #627d98;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.daily-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.interview-controls {
+  background: #34495e;
+  color: white;
+  padding: 15px 20px;
+  text-align: center;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-dot.active {
+  background: #2ecc71;
+  animation: blink 2s infinite;
+}
+
+@keyframes blink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.5; }
+}
+
+/* Voice Indicator */
+.voice-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.indicator-dot {
+  font-size: 1.5rem;
+}
+
+/* Completion States */
+.completion-message,
+.expired-message,
+.cancelled-message {
+  text-align: center;
+  max-width: 600px;
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.success-icon,
+.warning-icon,
+.info-icon {
+  font-size: 4rem;
+  margin-bottom: 20px;
+}
+
+.success-icon { color: #2ecc71; }
+.warning-icon { color: #f39c12; }
+.info-icon { color: #3498db; }
+
+/* Buttons */
+button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+button:hover {
+  background: #2980b9;
+}
+
+.retry-button {
+  margin-top: 20px;
+}
