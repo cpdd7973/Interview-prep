@@ -8,7 +8,7 @@ const PreJoinScreen = ({ roomState, onJoin }) => {
     // Detect if we are in an insecure context (HTTP on non-localhost)
     if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       setIsInsecure(true);
-      setMicStatus('error');
+      // Don't set status to error immediately, let them try 'Test Mic' after setting flags
     }
   }, []);
 
@@ -158,12 +158,12 @@ const PreJoinScreen = ({ roomState, onJoin }) => {
             }
             onJoin();
           }}
-          disabled={micStatus === 'error'}
+          disabled={micStatus === 'error' && !isInsecure}
           style={{
             width: '100%', padding: '16px', fontSize: '16px', fontWeight: '600',
-            backgroundColor: micStatus === 'error' ? '#cbd5e0' : '#3182ce',
+            backgroundColor: (micStatus === 'error' && !isInsecure) ? '#cbd5e0' : '#3182ce',
             color: 'white', border: 'none', borderRadius: '8px',
-            cursor: micStatus === 'error' ? 'not-allowed' : 'pointer',
+            cursor: (micStatus === 'error' && !isInsecure) ? 'not-allowed' : 'pointer',
             transition: 'background-color 0.2s', boxShadow: '0 4px 6px rgba(49, 130, 206, 0.2)'
           }}
         >
