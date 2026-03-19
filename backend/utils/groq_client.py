@@ -55,18 +55,31 @@ class LLMClient:
         self.primary_llm = None
         self.fallback_llm = None
         
-        # Initialize primary LLM (Groq)
+        # We check for keys but don't instantiate immediately to avoid import-time crashes
+        if not GROQ_AVAILABLE:
+            logger.warning("langchain-groq not installed. LLM will fail.")
+        if not settings.groq_api_key:
+            logger.warning("GROQ_API_KEY missing. LLM will fail.")
+        
+        self.initialized = False
+        
+    def _ensure_initialized(self):
+        """Lazy initialization of the actual LLM objects."""
+        if self.initialized:
+            return
+
         if GROQ_AVAILABLE and settings.groq_api_key:
             try:
-                print("DEBUG: Initializing ChatGroq...")
                 self.primary_llm = ChatGroq(
                     groq_api_key=settings.groq_api_key,
-                    model_name=model,
-                    temperature=temperature
+                    model_name=self.model,
+                    temperature=self.temperature
                 )
-                logger.info("✅ Groq LLM initialized")
+                logger.info("✅ Groq LLM initialized lazily")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize Groq: {e}")
+        
+        self.initialized = True
         
         # Initialize fallback LLM (Gemini) - DISABLED due to hang in this environment
         # if GEMINI_AVAILABLE and settings.gemini_api_key:
@@ -82,11 +95,16 @@ class LLMClient:
         #        logger.error(f"❌ Failed to initialize Gemini: {e}")
         
         if not self.primary_llm and not self.fallback_llm:
-            raise RuntimeError("No LLM available. Check API keys and dependencies.")
+            # We don't raise error in __init__ anymore, we do it in get_llm
+            pass
     
     def get_llm(self):
         """Get the active LLM instance (primary or fallback)."""
-        return self.primary_llm if self.primary_llm else self.fallback_llm
+        self._ensure_initialized()
+        llm = self.primary_llm if self.primary_llm else self.fallback_llm
+        if not llm:
+            raise RuntimeError("No LLM is available. Please check your GROQ_API_KEY in the .env file.")
+        return llm
     
     async def invoke_async(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """
