@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   backend:
+    user: "root"
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -21,6 +22,7 @@ services:
       retries: 3
 
   frontend:
+    user: "root"
     build:
       context: ./frontend
       dockerfile: Dockerfile
