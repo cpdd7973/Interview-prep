@@ -18,7 +18,7 @@ langchain-google-genai==0.0.6
 langgraph==0.0.20
 
 # Speech
-openai-whisper==20231117
+openai-whisper
 edge-tts==6.1.9
 pydub==0.25.1
 
@@ -53,7 +53,7 @@ python-dateutil==2.8.2
 pytz==2024.1
 
 # Audio Processing
-numpy==1.24.3
+numpy
 soundfile==0.12.1
 
 # Testing (optional)
