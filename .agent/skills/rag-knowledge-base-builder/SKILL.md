@@ -620,3 +620,37 @@ End every substantive response with:
 For deeper implementation detail, read:
 - `references/chunking-deep.md` — Detailed chunking algorithms, token boundary handling, overlap strategies, and validation patterns per document type
 - `references/retrieval-patterns.md` — Advanced retrieval patterns: query expansion, HyDE, multi-hop retrieval, re-ranking implementations, and evaluation harness
+
+
+---
+
+## 🛑 MANDATORY CROSS-FUNCTIONAL HANDOFFS
+
+Before generating or finalizing ANY code or system design that touches this domain,
+you MUST explicitly check the consequences with these other domains. No skill works in isolation.
+
+**1. The `CORE_RULES.md` Check:**
+   - Have you read `.agent/CORE_RULES.md`? The constraints in that file override everything in this skill. Check it before writing code.
+
+**2. Backend / Orchestration Check (If touching LLM calls, background jobs, or database updates):**
+   - Consult `backend-api-orchestration` to ensure you are not blocking the event loop or creating race conditions.
+
+**3. Frontend / UI Check (If modifying API payloads or Websockets):**
+   - Consult `frontend-interview-ui` or `ux-designer` to map out the intermediate loading states BEFORE modifying the API.
+
+**4. Data / Security Check (If logging, storing, or evaluating candidate data):**
+   - Consult `auth-security-layer` and `database-storage-design` to handle PII and scale limits.
+
+---
+
+## 🛑 MANDATORY FAILURE MODE ANALYSIS
+
+You are not allowed to generate critical code (prompts, tool loops, background jobs) without first writing a "Failure Modes Considered" block. 
+
+*Example requirement for any generated code:*
+```python
+# FAILURE MODES CONSIDERED:
+# 1. API Timeout -> Handled with 10s timeout and default fallback.
+# 2. Context Length Exceeded -> Input truncated to 5k tokens before LLM request.
+# 3. Bad JSON -> Uses json_repair or hard-coded default.
+```

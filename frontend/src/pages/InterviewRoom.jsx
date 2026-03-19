@@ -40,6 +40,8 @@ const InterviewRoom = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [pendingCompletion, setPendingCompletion] = useState(false);
+  const [forceCompleted, setForceCompleted] = useState(false); // Overrides polling
   const [isAIOptedIn, setIsAIOptedIn] = useState(false);
   const [messages, setMessages] = useState([]);
   const pollTimerRef = useRef(null);
@@ -126,9 +128,14 @@ const InterviewRoom = () => {
   const getViewState = () => {
     if (!roomState) return 'LOADING';
 
-    const { status, seconds_remaining } = roomState;
+    const { status, seconds_remaining, finished_at } = roomState;
 
-    if (status === 'ACTIVE') return 'ACTIVE';
+    if (forceCompleted) return 'COMPLETED';
+
+    if (status === 'ACTIVE') {
+      if (finished_at) return 'COMPLETED';
+      return 'ACTIVE';
+    }
     if (status === 'COMPLETED') return 'COMPLETED';
     if (status === 'EXPIRED') return 'EXPIRED';
     if (status === 'CANCELLED') return 'CANCELLED';
@@ -140,6 +147,9 @@ const InterviewRoom = () => {
 
     // PENDING state - check if early entry allowed
     if (status === 'PENDING') {
+      if (seconds_remaining <= 0) {
+        return 'READY';
+      }
       if (seconds_remaining <= EARLY_ENTRY_SECONDS) {
         return 'EARLY_ENTRY';
       }
@@ -165,12 +175,16 @@ const InterviewRoom = () => {
   const micStreamRef = useRef(null);
   const recordingCycleRef = useRef(null);
 
+  // VAD Refs
+  const isSpeakingRef = useRef(false);
+  const silenceStartRef = useRef(null);
+
   // Keep ref in sync with state
   useEffect(() => {
     isAISpeakingRef.current = isAISpeaking;
   }, [isAISpeaking]);
 
-  // Start a single recording cycle: record for 6s, stop, send, restart
+  // Start a single recording cycle: record continuously until VAD detects silence
   const startRecordingCycle = (ws, stream) => {
     const chunks = [];
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -190,31 +204,28 @@ const InterviewRoom = () => {
         console.log("[MIC] 🗑️ Discarding recording (AI was speaking — it's echo)");
         return;
       }
-      // Combine all chunks into ONE complete WebM file (with header)
+
+      // Send the accumulated WebM blob
       if (chunks.length > 0) {
         const blob = new Blob(chunks, { type: 'audio/webm' });
+        // Only send if it's substantial (likely contains speech)
         if (blob.size > 1000 && ws.readyState === WebSocket.OPEN) {
-          console.log(`[MIC] 📤 Sending complete ${blob.size} byte WebM recording`);
+          console.log(`[MIC] 📤 Sending complete ${blob.size} byte WebM recording (VAD triggered)`);
           ws.send(blob);
         }
       }
-      // Start the next cycle (unless AI is speaking or WS closed)
+
+      // Start the next cycle immediately to catch the next utterance
       if (ws.readyState === WebSocket.OPEN && !isAISpeakingRef.current) {
+        // Small delay to ensure clean restart
         recordingCycleRef.current = setTimeout(() => {
           startRecordingCycle(ws, stream);
-        }, 200);
+        }, 50);
       }
     };
 
     recorder.start();
-    console.log("[MIC] 🎙️ Recording cycle started (6s)...");
-
-    // Stop after 6 seconds to produce a complete WebM file
-    setTimeout(() => {
-      if (recorder.state === 'recording') {
-        recorder.stop();
-      }
-    }, 6000);
+    console.log("[MIC] 🎙️ Recording cycle started (Waiting for speech)...");
   };
 
   // Initialize mic — gets stream once, but does NOT start recording.
@@ -297,7 +308,37 @@ const InterviewRoom = () => {
         const rms = Math.sqrt(sumSquares / dataArray.length);
         const level = Math.round(rms);
         setMicLevel(level);
-      }, 200);
+
+        // VAD LOGIC
+        // Only monitor for candidate speech if AI is NOT speaking and recorder is active
+        if (!isAISpeakingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          // Normal ambient noise usually triggers levels 0-3. Speech triggers levels > 4.
+          if (level > 4) {
+            if (!isSpeakingRef.current) {
+              console.log("[MIC] 🗣️ Speech detected...");
+              isSpeakingRef.current = true;
+            }
+            // Reset silence timer because they are speaking
+            silenceStartRef.current = null;
+          } else {
+            // Silence detected
+            if (isSpeakingRef.current) {
+              if (!silenceStartRef.current) {
+                silenceStartRef.current = Date.now();
+              } else if (Date.now() - silenceStartRef.current > 2000) {
+                // 2 seconds of continuous silence means they've finished their turn
+                console.log("[MIC] 🤫 Speech ended (2s silence). Stopping recording to send...");
+                isSpeakingRef.current = false;
+                silenceStartRef.current = null;
+
+                // Stopping the recorder triggers onstop -> which sends the WebSocket message!
+                // Then it automatically restarts.
+                mediaRecorderRef.current.stop();
+              }
+            }
+          }
+        }
+      }, 100);
     } catch (err) {
       console.error("[MIC] ❌ Microphone access denied:", err);
       alert("Microphone access is required for voice interview. Please allow microphone access and refresh.");
@@ -306,11 +347,12 @@ const InterviewRoom = () => {
 
   // Setup WebSocket when ACTIVE and User has opted in
   useEffect(() => {
-    if (viewState !== 'ACTIVE' || !isAIOptedIn) return;
+    if ((viewState !== 'ACTIVE' && viewState !== 'READY') || !isAIOptedIn) return;
 
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = import.meta.env.VITE_API_BASE_URL
       ? import.meta.env.VITE_API_BASE_URL.replace('http', 'ws') + `/api/interviews/${roomId}/ws`
-      : `ws://${window.location.host}/api/interviews/${roomId}/ws`;
+      : `${wsProtocol}//${window.location.host}/api/interviews/${roomId}/ws`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -363,6 +405,12 @@ const InterviewRoom = () => {
         console.log("Transcript:", data);
         if (data.type === 'transcript') {
           setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
+        } else if (data.type === 'interview_complete') {
+          // Interview finished — wait until AI stops speaking before transitioning
+          console.log("🎉 Interview completed signal received. Waiting for AI to finish speaking...");
+          setPendingCompletion(true);
+        } else if (data.type === 'pong') {
+          // Heartbeat response — ignore
         }
       }
     };
@@ -390,7 +438,7 @@ const InterviewRoom = () => {
   }, [roomId, viewState, isAIOptedIn]);
 
   // ── Pause/resume mic recording based on AI speaking state ──
-  // KEY: 2-second cooldown after AI stops to let speaker echo dissipate
+  // KEY: Cooldown after AI stops to let speaker echo dissipate
   useEffect(() => {
     if (isAISpeaking) {
       // Stop current recording cycle while AI speaks
@@ -403,16 +451,25 @@ const InterviewRoom = () => {
         mediaRecorderRef.current.stop();
       }
     } else {
-      // AI finished — wait 5 seconds for speaker echo to fully dissipate, then start recording
+      // AI finished — wait a brief moment for speaker echo to dissipate, then start recording
       if (wsRef.current?.readyState === WebSocket.OPEN && micStreamRef.current) {
-        console.log("[MIC] ⏳ AI finished. Waiting 5s for echo to clear...");
+        console.log("[MIC] ⏳ AI finished. Waiting 500ms for echo to clear...");
         recordingCycleRef.current = setTimeout(() => {
           console.log("[MIC] ▶️ Starting mic capture now");
           startRecordingCycle(wsRef.current, micStreamRef.current);
-        }, 5000);
+        }, 500);
       }
     }
   }, [isAISpeaking]);
+
+  // Transition to completed UI when AI finishes speaking the final message
+  useEffect(() => {
+    if (pendingCompletion && !isAISpeaking) {
+      console.log("🎉 AI finished speaking. Forcing UI transition to COMPLETED.");
+      setForceCompleted(true);
+      setRoomState(prev => ({ ...prev, status: 'COMPLETED' }));
+    }
+  }, [pendingCompletion, isAISpeaking]);
 
   // ── Priya's text fallback: Send typed text directly via WebSocket ──
   const handleManualSend = () => {
@@ -486,7 +543,7 @@ const InterviewRoom = () => {
   }
 
   // Active interview state
-  if (viewState === 'ACTIVE') {
+  if (viewState === 'ACTIVE' || viewState === 'READY') {
     if (!isAIOptedIn) {
       return (
         <PreJoinScreen
@@ -498,8 +555,8 @@ const InterviewRoom = () => {
 
     return (
       <div style={{
-        backgroundColor: '#1a202c', minHeight: '100vh', display: 'flex', flexDirection: 'column',
-        fontFamily: "'Inter', sans-serif", color: 'white'
+        backgroundColor: '#1a202c', height: '100vh', display: 'flex', flexDirection: 'column',
+        fontFamily: "'Inter', sans-serif", color: 'white', overflow: 'hidden'
       }}>
         {/* Header */}
         <div style={{
@@ -540,20 +597,49 @@ const InterviewRoom = () => {
           {/* Left Sidebar: Transcript + Text Input (Priya's pattern) */}
           <div style={{
             flex: '1', maxWidth: '400px', borderRight: '1px solid #2d3748',
-            display: 'flex', flexDirection: 'column', backgroundColor: '#1e293b'
+            display: 'flex', flexDirection: 'column', backgroundColor: '#1e293b',
+            overflow: 'hidden'
           }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid #2d3748', fontWeight: '600', color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid #2d3748', fontWeight: '600', color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <span>Live Transcript</span>
               <span style={{ fontSize: '12px', color: '#a0aec0', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ width: '8px', height: '8px', backgroundColor: '#48bb78', borderRadius: '50%', animation: 'pulse 2s infinite' }}></span>
                 Recording
               </span>
             </div>
+
+            {/* VAD INDICATOR showing candidate when mic is active and speech detected */}
+            <div style={{
+              height: '24px', backgroundColor: '#0f172a', borderBottom: '1px solid #2d3748',
+              display: 'flex', alignItems: 'center', padding: '0 16px', fontSize: '11px', color: '#94a3b8', flexShrink: 0
+            }}>
+              {!isAISpeaking ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {micLevel > 4 ? (
+                    <>
+                      <span style={{ width: '6px', height: '6px', backgroundColor: '#38bdf8', borderRadius: '50%', boxShadow: '0 0 8px #38bdf8' }} />
+                      Detecting speech...
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ width: '6px', height: '6px', backgroundColor: '#64748b', borderRadius: '50%' }} />
+                      Listening for you to speak
+                    </>
+                  )}
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f59e0b' }}>
+                  <span style={{ width: '6px', height: '6px', backgroundColor: '#f59e0b', borderRadius: '50%' }} />
+                  AI is speaking
+                </span>
+              )}
+            </div>
+
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
               <ChatInterface messages={messages} />
             </div>
             {/* Priya: "Always fall back to text." — permanent text input */}
-            <div style={{ padding: '12px 16px', borderTop: '1px solid #2d3748', display: 'flex', gap: '8px' }}>
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #2d3748', display: 'flex', gap: '8px', flexShrink: 0 }}>
               <input
                 type="text"
                 value={manualText}

@@ -152,6 +152,8 @@ class VoiceMCPServer:
                     "like and subscribe", "bye", "bye.",
                     "you", "okay", "okay.", "um", "uh",
                     "so", "the", "i", "a", "and",
+                    "what is it on behalf of me",
+                    "what is it", "is it", "on behalf of me"
                 }
                 if text.lower().strip(".,!? ") in HALLUCINATION_PHRASES:
                     logger.debug(f"Groq Whisper hallucination filtered: '{text}'")

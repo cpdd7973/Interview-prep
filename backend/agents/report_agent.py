@@ -10,14 +10,19 @@ import os
 from agents.state import InterviewState
 from config import settings
 from mcp_servers.report_mcp import report_mcp, CompileReportInput, ExportPdfInput, EmailReportInput
+from database import SessionLocal, Evaluation
 
 logger = logging.getLogger(__name__)
+
+# Reports directory
+REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports")
+os.makedirs(REPORTS_DIR, exist_ok=True)
 
 def report_node(state: InterviewState) -> Dict[str, Any]:
     """
     LangGraph node for generating and emailing the interview report.
     """
-    logger.info(f"📄 Report Agent generating final document for candidate in session")
+    logger.info(f"📄 Report Agent generating final document for {state.get('candidate_name')}")
     
     if state.get("status") != "EVALUATED" or not state.get("evaluation"):
         logger.info("Session not EVALUATED. Skipping report generation.")
@@ -46,11 +51,13 @@ def report_node(state: InterviewState) -> Dict[str, Any]:
         
         # 2. Export PDF
         room_id = state.get("room_id", "unknown_room")
-        pdf_path = os.path.join(settings.REPORTS_DIR, f"{room_id}_report.pdf")
+        candidate_name = state.get("candidate_name", "unknown").replace(" ", "_")
+        pdf_filename = f"{room_id}_{candidate_name}_report.pdf"
+        pdf_path = os.path.join(REPORTS_DIR, pdf_filename)
         
         export_resp = report_mcp.export_pdf(ExportPdfInput(
             report_data=report_data,
-            output_path=str(pdf_path)
+            output_path=pdf_path
         ))
         
         if not export_resp.get("success"):
@@ -58,21 +65,43 @@ def report_node(state: InterviewState) -> Dict[str, Any]:
             
         logger.info(f"✅ Generated PDF report at {pdf_path}")
         
-        # 3. Email Admin
-        admin_email = settings.admin_email
-        email_resp = report_mcp.email_report_to_admin(EmailReportInput(
-            report_path=str(pdf_path),
-            room_id=room_id,
-            admin_email=admin_email
-        ))
+        # 3. Save report_path to Evaluation DB record
+        db = SessionLocal()
+        try:
+            evaluation = db.query(Evaluation).filter(Evaluation.room_id == room_id).first()
+            if evaluation:
+                evaluation.report_path = pdf_path
+                db.commit()
+                logger.info(f"💾 Saved report_path to Evaluation record")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to save report_path to DB: {e}")
+        finally:
+            db.close()
         
-        if not email_resp.get("success"):
-            logger.error(f"Failed to email admin: {email_resp.get('error')}")
-        else:
-            logger.info(f"✅ Emailed report notice to {admin_email}")
+        # 4. Email Admin
+        admin_email = settings.admin_email
+        if admin_email:
+            email_resp = report_mcp.email_report_to_admin(EmailReportInput(
+                report_path=pdf_path,
+                room_id=room_id,
+                admin_email=admin_email
+            ))
             
-        return dict(state, status="REPORTED")
+            if not email_resp.get("success"):
+                logger.error(f"⚠️ Failed to email admin: {email_resp.get('error')}")
+                logger.info("Report generated but email delivery failed. PDF saved locally.")
+            else:
+                logger.info(f"✅ Report emailed to {admin_email}")
+        else:
+            logger.warning("⚠️ No admin_email configured. Report saved locally only.")
+            
+        return {
+            **state,
+            "status": "REPORTED",
+            "report_path": pdf_path
+        }
         
     except Exception as e:
-        logger.error(f"❌ Report agent failed: {e}")
-        return dict(state, error=f"Report failed: {str(e)}")
+        logger.error(f"❌ Report agent failed: {e}", exc_info=True)
+        return {**state, "error": f"Report failed: {str(e)}"}

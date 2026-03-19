@@ -202,14 +202,15 @@ async def cancel_interview(room_id: str):
     Cancel a scheduled interview.
     """
     from database import SessionStatus
+    from mcp_servers.session_mcp import UpdateStatusInput
     
     # Update status to CANCELLED
-    result = session_mcp.update_status({
-        "room_id": room_id,
-        "status": SessionStatus.CANCELLED
-    })
+    result = session_mcp.update_status(UpdateStatusInput(
+        room_id=room_id,
+        status=SessionStatus.CANCELLED
+    ))
     
-    if result["success"]:
+    if result.get("success"):
         # Cancel scheduler job
         session_mcp.cancel_scheduler_job(room_id)
     
@@ -375,6 +376,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 questions_state[qid] = "asked"
                 
     chat_state: InterviewState = {
+        "room_id": room_id,
         "candidate_email": "",
         "candidate_name": candidate_name,
         "job_role": job_role,
@@ -600,12 +602,56 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 # 7. Check if interview is completed
                 if agent_result.get("status") == "COMPLETED":
                     chat_state["status"] = "COMPLETED"
-                    logger.info(f"Interview {room_id} completed. Updating status and triggering evaluation.")
-                    await asyncio.to_thread(
-                        session_mcp.update_status,
-                        UpdateStatusInput(room_id=room_id, status=SessionStatus.COMPLETED)
-                    )
-                    await asyncio.to_thread(interview_graph.invoke, chat_state)
+                    logger.info(f"Interview {room_id} completed. Updating status.")
+                    
+                    # Do NOT set status to COMPLETED yet. Set finished_at and keep ACTIVE.
+                    def mark_finished():
+                        db = SessionLocal()
+                        try:
+                            s = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+                            if s:
+                                s.finished_at = datetime.utcnow()
+                                db.commit()
+                        finally:
+                            db.close()
+                    
+                    await asyncio.to_thread(mark_finished)
+                    
+                    # Notify frontend that interview is complete
+                    await websocket.send_json({
+                        "type": "interview_complete",
+                        "message": "Interview completed. Your evaluation report is being generated."
+                    })
+                    
+                    # Run evaluation + report pipeline in background
+                    # (don't block the WebSocket close)
+                    async def run_post_interview_pipeline(state):
+                        db = SessionLocal()
+                        try:
+                            logger.info(f"🚀 Starting post-interview pipeline (evaluate → report → email)")
+                            await asyncio.to_thread(interview_graph.invoke, state)
+                            
+                            session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+                            if session:
+                                session.report_generated_at = datetime.utcnow()
+                                session.status = SessionStatus.COMPLETED
+                                db.commit()
+                            logger.info(f"✅ Post-interview pipeline completed for {room_id}")
+                        except Exception as pipe_err:
+                            logger.error(f"❌ Post-interview pipeline failed: {pipe_err}", exc_info=True)
+                            session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+                            if session:
+                                session.report_retry_count = getattr(session, 'report_retry_count', 0) + 1
+                                session.status = SessionStatus.ACTIVE
+                                db.commit()
+                        finally:
+                            db.close()
+                    
+                    asyncio.create_task(run_post_interview_pipeline(chat_state))
+                    
+                    # Prevent network race condition: Give the browser time to receive the final Audio Blob and JSON
+                    # before severing the TCP connection.
+                    await asyncio.sleep(3.0)
                     await websocket.close(code=1000, reason="Interview Completed")
                     break
 
@@ -618,16 +664,29 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 error_msg = str(inner_e)
                 if any(x in error_msg for x in ["WebSocket is not connected", "already closed", "once a disconnect message", "ConnectionClosed"]):
                     logger.warning(f"Socket closed ({error_msg}). Breaking loop.")
+                    # Trigger disconnect explicitly
+                    await asyncio.to_thread(
+                        session_mcp.update_status,
+                        UpdateStatusInput(room_id=room_id, status=SessionStatus.DISCONNECTED)
+                    )
                     break
                 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for room {room_id}")
+        await asyncio.to_thread(
+            session_mcp.update_status,
+            UpdateStatusInput(room_id=room_id, status=SessionStatus.DISCONNECTED)
+        )
     except Exception as e:
         logger.error(f"WebSocket critical error: {e}")
         try:
             await websocket.close(code=1011)
         except:
             pass
+        await asyncio.to_thread(
+            session_mcp.update_status,
+            UpdateStatusInput(room_id=room_id, status=SessionStatus.DISCONNECTED)
+        )
 
 
 if __name__ == "__main__":

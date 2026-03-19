@@ -8,6 +8,8 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import logging
+import threading
+import asyncio
 from config import settings
 from database import SessionLocal, InterviewSession, SessionStatus
 
@@ -37,122 +39,124 @@ scheduler = BackgroundScheduler(
 )
 
 
-def activate_interview(room_id: str):
-    """
-    Job function that activates an interview at scheduled time.
-    Called by APScheduler exactly at scheduled_at datetime.
-    """
-    db: Session = SessionLocal()
+def _run_eval_pipeline_in_background(room_id: str, now: datetime):
+    """Runs the async graph in a new event loop inside a background thread."""
+    from agents.orchestrator import interview_graph
+    
+    chat_state = {
+        "messages": [],
+        "room_id": room_id,
+        "status": "COMPLETED"
+    }
+    
     try:
-        session = db.query(InterviewSession).filter(
-            InterviewSession.room_id == room_id
-        ).first()
+        logger.info(f"🚀 Sweeper: Starting post-interview pipeline for {room_id} in background thread")
+        # Run the graph in a dedicated event loop for this thread
+        asyncio.run(interview_graph.ainvoke(chat_state))
         
-        if not session:
-            logger.error(f"Session {room_id} not found for activation")
-            return
+        db = SessionLocal()
+        session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+        if session:
+            session.report_generated_at = now
+            session.status = SessionStatus.COMPLETED
+            db.commit()
+            logger.info(f"✅ Sweeper: Report generated and completed {room_id}")
+        db.close()
         
-        if session.status != SessionStatus.PENDING:
-            logger.warning(f"Session {room_id} is {session.status}, cannot activate")
-            return
-        
-        # Update status to ACTIVE
-        session.status = SessionStatus.ACTIVE
-        session.activated_at = datetime.utcnow()
-        db.commit()
-        
-        logger.info(f"Interview {room_id} activated successfully")
-        
-        # Schedule expiration job (60 minutes from now)
-        expire_time = datetime.utcnow() + timedelta(minutes=settings.session_timeout_minutes)
-        scheduler.add_job(
-            expire_interview,
-            'date',
-            run_date=expire_time,
-            args=[room_id],
-            id=f"expire_{room_id}",
-            replace_existing=True
-        )
-        
-    except Exception as e:
-        logger.error(f"Error activating interview {room_id}: {e}")
-        db.rollback()
-    finally:
+    except Exception as eval_err:
+        logger.error(f"❌ Sweeper: Evaluation failed for {room_id}: {eval_err}", exc_info=True)
+        db = SessionLocal()
+        session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+        if session:
+            session.report_retry_count = getattr(session, 'report_retry_count', 0) + 1
+            session.status = SessionStatus.ACTIVE  # Keep active to show Report Failed
+            db.commit()
         db.close()
 
+def trigger_evaluation(room_id: str, db: Session, session: InterviewSession, now: datetime):
+    """Run the evaluation and report pipeline for a completed or disconnected interview."""
+    # Spawn a background thread to avoid blocking the scheduler's single worker thread
+    thread = threading.Thread(target=_run_eval_pipeline_in_background, args=(room_id, now))
+    thread.daemon = True
+    thread.start()
 
-def expire_interview(room_id: str):
+
+def state_machine_sweeper():
     """
-    Job function that marks interview as EXPIRED if not completed.
-    Called 60 minutes after activation.
+    Runs every 60 seconds to enforce state machine rules:
+    1. PENDING > scheduled_at + 15m -> EXPIRED
+    2. DISCONNECTED > disconnected_at + 15m -> artificial finish -> EVALUATE -> COMPLETED
+    3. ACTIVE (Report generation retries or absolute timeouts) -> EVALUATE
     """
     db: Session = SessionLocal()
     try:
-        session = db.query(InterviewSession).filter(
-            InterviewSession.room_id == room_id
-        ).first()
+        now = datetime.utcnow()
         
-        if not session:
-            logger.error(f"Session {room_id} not found for expiration")
-            return
+        # 1. Process PENDING -> EXPIRED
+        pending_sessions = db.query(InterviewSession).filter(
+            InterviewSession.status == SessionStatus.PENDING
+        ).all()
         
-        if session.status == SessionStatus.ACTIVE:
-            session.status = SessionStatus.EXPIRED
-            session.completed_at = datetime.utcnow()
-            db.commit()
-            logger.info(f"Interview {room_id} expired (not completed in time)")
-        else:
-            logger.info(f"Interview {room_id} already {session.status}, skipping expiration")
+        for session in pending_sessions:
+            if now > session.scheduled_at + timedelta(minutes=15):
+                logger.info(f"Sweeper: Session {session.room_id} EXPIRED (No show)")
+                session.status = SessionStatus.EXPIRED
+                session.updated_at = now
         
+        # 2. Process DISCONNECTED -> COMPLETED
+        disconnected_sessions = db.query(InterviewSession).filter(
+            InterviewSession.status == SessionStatus.DISCONNECTED
+        ).all()
+        
+        for session in disconnected_sessions:
+            if session.disconnected_at and now > session.disconnected_at + timedelta(minutes=15):
+                logger.info(f"Sweeper: Session {session.room_id} dropped for 15m. Forcing completion.")
+                session.finished_at = now
+                session.updated_at = now
+                db.commit() # Commit the finished_at first
+                
+                # Trigger eval
+                trigger_evaluation(session.room_id, db, session, now)
+                
+        # 3. Process ACTIVE requiring report retry or timeout
+        active_sessions = db.query(InterviewSession).filter(
+            InterviewSession.status == SessionStatus.ACTIVE
+        ).all()
+        
+        for session in active_sessions:
+            # If it's already finished (from WebSocket) but we don't have a report yet, and we haven't hit the retry limit
+            if session.finished_at and not session.report_generated_at and session.report_retry_count < 3:
+                # Add a 2 minute delay between retries
+                if session.updated_at and now > session.updated_at + timedelta(minutes=2):
+                    logger.info(f"Sweeper: Retrying report generation for {session.room_id}")
+                    session.updated_at = now
+                    db.commit()
+                    trigger_evaluation(session.room_id, db, session, now)
+            
+            # Hard fallback: if active for over 2 hours, force finish
+            if getattr(session, 'activated_at', None) and not session.finished_at:
+                if now > session.activated_at + timedelta(minutes=120):
+                    logger.warning(f"Sweeper: Session {session.room_id} active for >2hrs. Force closing.")
+                    session.finished_at = now
+                    session.updated_at = now
+                    db.commit()
+                    trigger_evaluation(session.room_id, db, session, now)
+
+        db.commit()
     except Exception as e:
-        logger.error(f"Error expiring interview {room_id}: {e}")
+        logger.error(f"Sweeper error: {e}", exc_info=True)
         db.rollback()
     finally:
         db.close()
 
 
 def arm_activation_job(room_id: str, scheduled_at: datetime) -> bool:
-    """
-    Arms the activation job for a scheduled interview.
-    Returns True if successful, False otherwise.
-    """
-    try:
-        scheduler.add_job(
-            activate_interview,
-            'date',
-            run_date=scheduled_at,
-            args=[room_id],
-            id=f"activate_{room_id}",
-            replace_existing=True
-        )
-        logger.info(f"Activation job armed for {room_id} at {scheduled_at}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to arm activation job for {room_id}: {e}")
-        return False
-
+    """Deprecated: State is managed by the sweeper."""
+    return True
 
 def cancel_activation_job(room_id: str) -> bool:
-    """
-    Cancels a scheduled activation job (used when interview is rescheduled/cancelled).
-    Returns True if successful, False otherwise.
-    """
-    try:
-        job_id = f"activate_{room_id}"
-        if scheduler.get_job(job_id):
-            scheduler.remove_job(job_id)
-            logger.info(f"Activation job cancelled for {room_id}")
-        
-        # Also cancel expiration job if exists
-        expire_job_id = f"expire_{room_id}"
-        if scheduler.get_job(expire_job_id):
-            scheduler.remove_job(expire_job_id)
-            logger.info(f"Expiration job cancelled for {room_id}")
-        
-        return True
-    except Exception as e:
-        logger.error(f"Failed to cancel job for {room_id}: {e}")
-        return False
+    """Deprecated: State is managed by the sweeper."""
+    return True
 
 
 def start_scheduler():
@@ -161,14 +165,23 @@ def start_scheduler():
         scheduler.start()
         logger.info("APScheduler started successfully")
         
-        # Log existing jobs (useful after restart)
-        jobs = scheduler.get_jobs()
-        if jobs:
-            logger.info(f"Loaded {len(jobs)} existing jobs from jobstore")
-            for job in jobs:
-                logger.info(f"  - {job.id} scheduled for {job.next_run_time}")
-        else:
-            logger.info("📋 No existing jobs in jobstore")
+        # Completely remove any legacy point-in-time jobs from jobstore
+        legacy_jobs = scheduler.get_jobs()
+        for job in legacy_jobs:
+            if job.id.startswith('activate_') or job.id.startswith('expire_'):
+                scheduler.remove_job(job.id)
+                logger.info(f"Removed legacy point-in-time job: {job.id}")
+        
+        # Add the singular sweeper job if it doesn't exist
+        scheduler.add_job(
+            state_machine_sweeper,
+            'interval',
+            seconds=60,
+            id='state_machine_sweeper',
+            replace_existing=True,
+            misfire_grace_time=30
+        )
+        logger.info("Registered 60-second state_machine_sweeper job.")
 
 
 def shutdown_scheduler():
@@ -184,7 +197,5 @@ __all__ = [
     'start_scheduler',
     'shutdown_scheduler',
     'arm_activation_job',
-    'cancel_activation_job',
-    'activate_interview',
-    'expire_interview'
+    'cancel_activation_job'
 ]

@@ -28,6 +28,7 @@ Base = declarative_base()
 class SessionStatus(str, enum.Enum):
     PENDING = "PENDING"
     ACTIVE = "ACTIVE"
+    DISCONNECTED = "DISCONNECTED"
     COMPLETED = "COMPLETED"
     EXPIRED = "EXPIRED"
     CANCELLED = "CANCELLED"
@@ -80,7 +81,12 @@ class InterviewSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     activated_at = Column(DateTime, nullable=True)
+    joined_at = Column(DateTime, nullable=True)
+    disconnected_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+    report_generated_at = Column(DateTime, nullable=True)
+    report_retry_count = Column(Integer, default=0)
     
     # Relationships
     candidate = relationship("Candidate", back_populates="sessions")

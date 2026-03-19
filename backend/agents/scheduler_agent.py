@@ -1,6 +1,9 @@
 """
 Scheduler Agent Node
 Orchestrates creating the Room, Calendar Event, sending the Email, and logging the Session.
+
+v2: Removed OAuth2 guards — gmail_mcp and calendar_mcp now handle
+priority stack internally (SMTP/GWS/OAuth2 fallback).
 """
 import logging
 from typing import Dict, Any
@@ -13,7 +16,7 @@ from agents.state import InterviewState
 from config import settings
 from utils.groq_client import llm_client
 
-# Import MCP Servers directly for programmatic access (bypassing full REST/MCP protocol overhead for local execution)
+# Import MCP Servers directly for programmatic access
 from mcp_servers.room_mcp import room_mcp, CreateRoomInput
 from mcp_servers.calendar_mcp import calendar_mcp, CreateEventInput
 from mcp_servers.gmail_mcp import gmail_mcp, SendEmailInput
@@ -26,6 +29,10 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
     LangGraph node for scheduling an interview.
     It provisions the Daily room, blocks the Google Calendar, registers
     the session in SQLite, and emails the candidate.
+    
+    v2: Calendar + email calls always attempted — MCP servers handle
+    the priority stack (SMTP/GWS/OAuth2) and gracefully skip if
+    no method is available.
     """
     logger.info(f"⏳ Scheduler Agent active for {state.get('candidate_name')}")
     
@@ -55,6 +62,8 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
         room_url = room_resp["room_url"]
         logger.info(f"✅ Created Daily.co room: {room_url}")
         
+        frontend_link = f"{settings.frontend_url}/interview/{room_id}"
+        
         # 3. Use LLM to draft personalized invitation context
         prompt = f"""
         Draft a brief, professional invitation email to a candidate for an AI-led interview.
@@ -63,7 +72,7 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
         Company: {state.get('company', 'Our Company')}
         Interviewer: {state.get('interviewer_designation', 'AI Interviewer')}
         Time: {scheduled_at.strftime('%Y-%m-%d %H:%M UTC')}
-        URL: {room_url}
+        URL: {frontend_link}
         
         Keep it warm, encouraging, and under 150 words. Do NOT include pleasantries like 'Subject:' in the body.
         """
@@ -75,27 +84,24 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
             email_body = (
                 f"Hi {candidate_name},\n\n"
                 f"You are invited to an interview for the {job_role} position.\n"
-                f"Please join here at the scheduled time: {room_url}\n\n"
+                f"Please join here at the scheduled time: {frontend_link}\n\n"
                 "Best,\nInterview Agent System"
             )
             
         html_body = email_body.replace("\n", "<br>")
         
-        # 4. Create Calendar Event (Only if configured)
-        if settings.google_refresh_token and settings.google_refresh_token != "your_refresh_token":
-            cal_resp = calendar_mcp.create_event(CreateEventInput(
-                summary=f"Interview: {candidate_name} - {job_role}",
-                start_time=scheduled_at,
-                end_time=scheduled_at + timedelta(minutes=settings.max_interview_duration_minutes),
-                attendees=[candidate_email],
-                description=f"Generated Interview Room: {room_url}\n\n{email_body}"
-            ))
-            if cal_resp.get("success"):
-                logger.info("✅ Created Google Calendar event")
-            else:
-                logger.error(f"Failed to create calendar event: {cal_resp.get('error')}")
+        # 4. Create Calendar Event (always attempt — MCP handles priority stack)
+        cal_resp = calendar_mcp.create_event(CreateEventInput(
+            summary=f"Interview: {candidate_name} - {job_role}",
+            start_time=scheduled_at,
+            end_time=scheduled_at + timedelta(minutes=settings.max_interview_duration_minutes),
+            attendees=[candidate_email],
+            description=f"Generated Interview Room: {frontend_link}\n\n{email_body}"
+        ))
+        if cal_resp.get("success"):
+            logger.info(f"✅ Created calendar event via {cal_resp.get('method', 'unknown')}")
         else:
-            logger.info("⚠️ Skipping Google Calendar event creation (Credentials not configured)")
+            logger.warning(f"⚠️ Calendar event creation failed: {cal_resp.get('error')}. Continuing without it.")
             
         # 5. Create Session in Database
         sess_resp = session_mcp.create_session(CreateSessionInput(
@@ -110,20 +116,17 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
         
         db_room_id = sess_resp.get("room_id", room_id)
         
-        # 6. Send the Email notification via Gmail MCP Server (Only if configured)
-        if settings.google_refresh_token and settings.google_refresh_token != "your_refresh_token":
-            gmail_resp = gmail_mcp.send_email(SendEmailInput(
-                to_email=candidate_email,
-                subject=f"Your upcoming interview for {job_role}",
-                body=html_body,
-                is_html=True
-            ))
-            if gmail_resp.get("success"):
-                logger.info(f"✅ Sent invitation email to candidate")
-            else:
-                logger.error(f"Failed to send email: {gmail_resp.get('error')}")
+        # 6. Send Email notification (always attempt — MCP handles priority stack)
+        gmail_resp = gmail_mcp.send_email(SendEmailInput(
+            to_email=candidate_email,
+            subject=f"Your upcoming interview for {job_role}",
+            body=html_body,
+            is_html=True
+        ))
+        if gmail_resp.get("success"):
+            logger.info(f"✅ Sent invitation email via {gmail_resp.get('method', 'unknown')}")
         else:
-            logger.info("⚠️ Skipping Gmail invitation email (Credentials not configured)")
+            logger.warning(f"⚠️ Invitation email failed: {gmail_resp.get('error')}. Continuing without it.")
 
         # 7. Arm Activation Job in APScheduler
         session_mcp.arm_scheduler_job(room_id=db_room_id, scheduled_at=scheduled_at)
@@ -132,7 +135,7 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
             "room_id": db_room_id,
             "status": "PENDING",
             "daily_room_url": room_url,
-            "messages": [SystemMessage(content=f"Successfully scheduled interview for {candidate_name} at {scheduled_at}. Room: {room_url}")]
+            "messages": [SystemMessage(content=f"Successfully scheduled interview for {candidate_name} at {scheduled_at}. Room: {frontend_link}")]
         }
         
     except Exception as e:

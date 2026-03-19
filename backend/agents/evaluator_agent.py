@@ -14,7 +14,7 @@ from database import SessionLocal, Evaluation
 
 logger = logging.getLogger(__name__)
 
-def evaluator_node(state: InterviewState) -> Dict[str, Any]:
+async def evaluator_node(state: InterviewState) -> Dict[str, Any]:
     """
     LangGraph node for evaluating the completed interview.
     """
@@ -63,7 +63,7 @@ def evaluator_node(state: InterviewState) -> Dict[str, Any]:
     
     # 3. Call Evaluator MCP
     logger.info("Submitting transcript to Evaluator MCP Server...")
-    eval_resp = evaluator_mcp.calculate_dimension_scores(CalculateDimensionScoresInput(
+    eval_resp = await evaluator_mcp.calculate_dimension_scores(CalculateDimensionScoresInput(
         transcript=formatted_transcript,
         question_bank=question_bank_context,
         job_role=state.get("job_role", "Unknown"),

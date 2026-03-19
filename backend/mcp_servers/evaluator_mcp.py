@@ -7,10 +7,28 @@ from pydantic import BaseModel, Field
 import logging
 import json
 import os
+import re
 
 from utils.groq_client import llm_client
 
 logger = logging.getLogger(__name__)
+
+def extract_json(content: str) -> str:
+    """Robustly extract a JSON object from a string."""
+    # Strip markdown if present
+    content = re.sub(r'```json\s*', '', content)
+    content = re.sub(r'```\s*', '', content)
+    import json_repair
+    try:
+        # Use json_repair or simple regex fallback
+        parsed = json.loads(content)
+        return json.dumps(parsed)
+    except Exception:
+        match = re.search(r'\{.*\}', content, re.DOTALL)
+        if match:
+            return match.group(0)
+    return content.strip()
+
 
 # Load prompt template
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,7 +67,7 @@ class EvaluatorMCPServer:
             "generate_feedback": self.generate_feedback
         }
 
-    def score_answer(self, input_data: ScoreAnswerInput) -> Dict[str, Any]:
+    async def score_answer(self, input_data: ScoreAnswerInput) -> Dict[str, Any]:
         """Score a single response against ideal answer"""
         try:
             prompt = f"""Evaluate this interview answer. Return ONLY a JSON object with 'score' (0-10) and 'rationale' (1 sentence).
@@ -59,15 +77,14 @@ Candidate Answer: {input_data.answer}"""
             
             from langchain_core.messages import HumanMessage
             logger.info("Evaluating single answer via LLM...")
-            response = llm_client.invoke([HumanMessage(content=prompt)])
+            # Use async LLM invocation
+            response_text = await llm_client.invoke_async([HumanMessage(content=prompt)])
             
-            content = response.strip()
-            if "```json" in content:
-                content = content.split("```json")[-1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[-1].split("```")[0].strip()
+            logger.info(f"Answer LLM Raw Output: {response_text}")
+            content = extract_json(response_text)
             
             result = json.loads(content)
+            
             return {
                 "success": True,
                 "score": float(result.get("score", 0)),
@@ -77,9 +94,10 @@ Candidate Answer: {input_data.answer}"""
             logger.error(f"❌ Error scoring answer: {e}")
             return {"success": False, "error": str(e)}
 
-    def calculate_dimension_scores(self, input_data: CalculateDimensionScoresInput) -> Dict[str, Any]:
+    async def calculate_dimension_scores(self, input_data: CalculateDimensionScoresInput) -> Dict[str, Any]:
         """Calculates multi-dimensional scores for the entire transcript"""
         try:
+            # Optimize prompt by truncating deeply massive transcripts if necessary
             formatted_transcript = "--- Transcript Start ---\n"
             for t in input_data.transcript:
                 formatted_transcript += f"{t.get('speaker', 'Unknown')}: {t.get('content', '')}\n"
@@ -100,13 +118,11 @@ Candidate Answer: {input_data.answer}"""
             
             from langchain_core.messages import SystemMessage
             logger.info(f"Evaluating entire transcript for {input_data.candidate_name}...")
-            response = llm_client.invoke([SystemMessage(content=prompt)])
+            # Use async LLM invocation
+            response_text = await llm_client.invoke_async([SystemMessage(content=prompt)])
             
-            content = response.strip()
-            if "```json" in content:
-                content = content.split("```json")[-1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[-1].split("```")[0].strip()
+            logger.info(f"Transcript LLM Raw Output: {response_text}")
+            content = extract_json(response_text)
             
             result = json.loads(content)
             

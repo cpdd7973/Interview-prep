@@ -164,6 +164,7 @@ class SessionMCPServer:
                 "scheduled_at": session.scheduled_at.isoformat() + "Z",
                 "activated_at": session.activated_at.isoformat() + "Z" if session.activated_at else None,
                 "completed_at": session.completed_at.isoformat() + "Z" if session.completed_at else None,
+                "finished_at": session.finished_at.isoformat() + "Z" if session.finished_at else None,
                 "daily_room_url": session.daily_room_url,
                 "seconds_remaining": max(0, int(seconds_remaining))
             }
@@ -177,7 +178,7 @@ class SessionMCPServer:
         finally:
             db.close()
     
-    def update_status(self, input_data: UpdateStatusInput) -> Dict[str, Any]:
+    def update_status(self, input_data: Any) -> Dict[str, Any]:
         """
         Update session status.
         
@@ -185,9 +186,14 @@ class SessionMCPServer:
             dict: Success status and updated details
         """
         db: Session = SessionLocal()
+        
+        # Safely extract values whether input_data is a dict (MCP wrapper) or Pydantic object
+        room_id = input_data.get("room_id") if isinstance(input_data, dict) else input_data.room_id
+        status = input_data.get("status") if isinstance(input_data, dict) else input_data.status
+        
         try:
             session = db.query(InterviewSession).filter(
-                InterviewSession.room_id == input_data.room_id
+                InterviewSession.room_id == room_id
             ).first()
             
             if not session:
@@ -197,31 +203,40 @@ class SessionMCPServer:
                 }
             
             old_status = session.status
-            session.status = input_data.status
+            session.status = status
             session.updated_at = datetime.utcnow()
             
             # Update timestamps based on status
-            if input_data.status == SessionStatus.ACTIVE and not session.activated_at:
-                session.activated_at = datetime.utcnow()
-            elif input_data.status in [SessionStatus.COMPLETED, SessionStatus.EXPIRED, SessionStatus.CANCELLED]:
+            now = datetime.utcnow()
+            if status == SessionStatus.ACTIVE:
+                if not session.activated_at:
+                    session.activated_at = now
+                if not session.joined_at:
+                    session.joined_at = now
+                session.disconnected_at = None  # Clear disconnect timer on (re)join
+            elif status == SessionStatus.DISCONNECTED:
+                session.disconnected_at = now
+            elif status in [SessionStatus.COMPLETED, SessionStatus.EXPIRED, SessionStatus.CANCELLED]:
+                if not session.finished_at:
+                    session.finished_at = now
                 if not session.completed_at:
-                    session.completed_at = datetime.utcnow()
+                    session.completed_at = now
             
             db.commit()
             
-            logger.info(f"✅ Session {input_data.room_id} status: {old_status.value} → {input_data.status.value}")
+            logger.info(f"✅ Session {room_id} status: {old_status.value} → {status if isinstance(status, str) else status.value}")
             
             return {
                 "success": True,
-                "room_id": input_data.room_id,
+                "room_id": room_id,
                 "old_status": old_status.value,
-                "new_status": input_data.status.value,
+                "new_status": status if isinstance(status, str) else status.value,
                 "message": "Status updated successfully"
             }
         
         except Exception as e:
             db.rollback()
-            logger.error(f"❌ Error updating status for {input_data.room_id}: {e}")
+            logger.error(f"❌ Error updating status for {room_id}: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -407,7 +422,12 @@ class SessionMCPServer:
                     "company": s.company,
                     "status": s.status.value,
                     "scheduled_at": s.scheduled_at.isoformat() + "Z",
-                    "created_at": s.created_at.isoformat() + "Z"
+                    "created_at": s.created_at.isoformat() + "Z",
+                    "joined_at": s.joined_at.isoformat() + "Z" if s.joined_at else None,
+                    "disconnected_at": s.disconnected_at.isoformat() + "Z" if s.disconnected_at else None,
+                    "finished_at": s.finished_at.isoformat() + "Z" if s.finished_at else None,
+                    "report_generated_at": s.report_generated_at.isoformat() + "Z" if s.report_generated_at else None,
+                    "report_retry_count": getattr(s, 'report_retry_count', 0)
                 }
                 for s in sessions
             ]

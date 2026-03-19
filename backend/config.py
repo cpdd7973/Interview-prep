@@ -16,11 +16,14 @@ class Settings(BaseSettings):
     gemini_api_key: str
     primary_llm: Literal["groq", "gemini"] = "groq"
     
-    # Google APIs
-    google_client_id: str
-    google_client_secret: str
-    google_refresh_token: str
-    admin_email: str
+    # Google APIs (OAuth2 — optional if using GWS CLI instead)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_refresh_token: str = ""
+    admin_email: str = ""
+    
+    # Google Workspace CLI (gws)
+    gws_cli_path: str = "gws"  # Path to gws binary, or 'gws' if on PATH
     
     # Daily.co (Now Optional/Deprecated for Jitsi Meet)
     daily_api_key: str = ""
@@ -43,9 +46,11 @@ class Settings(BaseSettings):
     session_timeout_minutes: int = 60
     max_interview_duration_minutes: int = 45
     
-    # Email
+    # Email (SMTP — use Gmail App Password for simple setup)
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
+    smtp_username: str = ""  # Gmail address (e.g. you@gmail.com)
+    smtp_password: str = ""  # Gmail App Password from myaccount.google.com/apppasswords
     
     # Security
     secret_key: str
@@ -56,7 +61,8 @@ class Settings(BaseSettings):
     
     model_config = {
         "env_file": str(Path(__file__).parent.parent / ".env"),
-        "case_sensitive": False
+        "case_sensitive": False,
+        "extra": "ignore"  # Allow extra env vars from gws auth, system, etc.
     }
     
     @property
