@@ -364,6 +364,9 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         return data
 
     import asyncio
+    session_data = await asyncio.to_thread(fetch_session)
+    logger.info(f"Session data fetch result: {session_data}")
+    
     if not session_data:
         await websocket.close(code=1008, reason="Session not found")
         return
