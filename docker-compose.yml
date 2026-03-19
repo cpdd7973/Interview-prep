@@ -7,7 +7,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8080:8000"
+      - "127.0.0.1:8080:8000"
     env_file:
       - .env
     volumes:
@@ -27,9 +27,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "80:5173"
+      - "127.0.0.1:5173:5173"
     environment:
-      - VITE_API_BASE_URL=http://144.24.129.55:8080
+      - VITE_API_BASE_URL=https://interviewer.dpdns.org
     depends_on:
       - backend
     healthcheck:
