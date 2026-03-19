@@ -115,7 +115,17 @@ const PreJoinScreen = ({ roomState, onJoin }) => {
               </button>
             )}
             {micStatus === 'testing' && <span style={{ color: '#718096', fontSize: '13px' }}>Testing...</span>}
-            {micStatus === 'error' && <span style={{ color: '#e53e3e', fontSize: '13px', fontWeight: '500' }}>Access Denied</span>}
+            {micStatus === 'error' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#e53e3e', fontSize: '13px', fontWeight: '500' }}>Access Denied</span>
+                <button
+                  onClick={testMicrophone}
+                  style={{ padding: '4px 8px', background: 'white', color: '#c53030', border: '1px solid #feb2b2', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {micStatus === 'success' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '60px', height: '6px', backgroundColor: '#edf2f7', borderRadius: '3px', overflow: 'hidden' }}>
@@ -133,11 +143,12 @@ const PreJoinScreen = ({ roomState, onJoin }) => {
               <p style={{ color: '#742a2a', fontSize: '12px', margin: 0, lineHeight: '1.5' }}>
                 {isInsecure ? (
                   <>
-                    Browsers block microphone access on <b>http://</b> sites. To test this:
+                    Browsers block microphone access on <b>http://</b> sites. To fix this:
                     <ol style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                      <li>Open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
-                      <li>Add <code>{window.location.origin}</code> to the list</li>
-                      <li>Set to "Enabled" and Relaunch Chrome</li>
+                      <li>Open <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b></li>
+                      <li>In the text box, paste exactly: <code style={{ backgroundColor: '#fff', padding: '2px 4px', border: '1px solid #ddd' }}>{window.location.origin}</code></li>
+                      <li>Select <b>Enabled</b> in the dropdown</li>
+                      <li>Click the <b>Relaunch</b> button at the bottom</li>
                     </ol>
                   </>
                 ) : (
