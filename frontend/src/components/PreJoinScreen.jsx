@@ -135,7 +135,7 @@ const PreJoinScreen = ({ roomState, onJoin }) => {
               </div>
             )}
           </div>
-          {micStatus === 'error' && (
+          {(micStatus === 'error' || isInsecure) && (
             <div style={{ marginTop: '15px', padding: '12px', backgroundColor: '#fff5f5', border: '1px solid #feb2b2', borderRadius: '8px' }}>
               <p style={{ color: '#c53030', fontSize: '13px', margin: '0 0 8px 0', fontWeight: '600' }}>
                 {isInsecure ? '🚨 Insecure Connection Detected' : '❌ Microphone Access Denied'}
