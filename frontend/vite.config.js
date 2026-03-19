@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
-    allowedHosts: ['.ngrok-free.dev', '.ngrok.io'],
+    allowedHosts: ['.ngrok-free.dev', '.ngrok.io', 'prep.interviewer.dpdns.org'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
