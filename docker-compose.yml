@@ -29,7 +29,7 @@ services:
     ports:
       - "127.0.0.1:5173:5173"
     environment:
-      - VITE_API_BASE_URL=https://interviewer.dpdns.org
+      - VITE_API_BASE_URL=https://prep.interviewer.dpdns.org
     depends_on:
       - backend
     healthcheck:
