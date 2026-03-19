@@ -1,11 +1,17 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 WORKDIR /app
 
 # Create non-root user for security (Red Flag #5 from devops-deployment)
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Install system dependencies (ffmpeg is required by Whisper)
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+# - build-essential and python3-dev for C++ extensions (chroma-hnswlib)
+# - ffmpeg for Whisper audio processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Dependencies
 COPY requirements.txt .
