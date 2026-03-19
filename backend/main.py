@@ -169,10 +169,13 @@ async def schedule_interview(interview_data: dict):
             "status": result.get("status")
         }
     except Exception as e:
-        logger.error(f"Error scheduling interview via graph: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Error scheduling interview via graph: {e}\n{error_trace}")
         return {
             "success": False,
-            "error": str(e)
+            "error": f"Server Error: {str(e)}",
+            "details": error_trace if settings.log_level == "DEBUG" else None
         }
 
 
