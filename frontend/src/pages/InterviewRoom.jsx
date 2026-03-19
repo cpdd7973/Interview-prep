@@ -107,10 +107,10 @@ const InterviewRoom = () => {
       pollTimerRef.current = null;
     }
 
-    // Only poll if status is PENDING or ACTIVE
-    if (status === 'PENDING' || status === 'ACTIVE') {
-      // For PENDING with less than 10 minutes remaining, poll more frequently
-      const pollInterval = status === 'PENDING' && seconds_remaining < 600
+    // Only poll if status is PENDING, ACTIVE, or DISCONNECTED
+    if (status === 'PENDING' || status === 'ACTIVE' || status === 'DISCONNECTED') {
+      // For PENDING with less than 10 minutes remaining, or if DISCONNECTED, poll more frequently
+      const pollInterval = (status === 'PENDING' && seconds_remaining < 600) || status === 'DISCONNECTED'
         ? 10000  // 10 seconds
         : POLL_INTERVAL;
 
@@ -132,9 +132,9 @@ const InterviewRoom = () => {
 
     if (forceCompleted) return 'COMPLETED';
 
-    if (status === 'ACTIVE') {
+    if (status === 'ACTIVE' || status === 'DISCONNECTED') {
       if (finished_at) return 'COMPLETED';
-      return 'ACTIVE';
+      return 'ACTIVE'; // Treat DISCONNECTED as ACTIVE for the room UI to allow reconnections
     }
     if (status === 'COMPLETED') return 'COMPLETED';
     if (status === 'EXPIRED') return 'EXPIRED';
@@ -350,9 +350,16 @@ const InterviewRoom = () => {
     if ((viewState !== 'ACTIVE' && viewState !== 'READY') || !isAIOptedIn) return;
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = import.meta.env.VITE_API_BASE_URL
-      ? import.meta.env.VITE_API_BASE_URL.replace('http', 'ws') + `/api/interviews/${roomId}/ws`
-      : `${wsProtocol}//${window.location.host}/api/interviews/${roomId}/ws`;
+    
+    // Robust WebSocket URL construction
+    let wsUrl;
+    if (import.meta.env.VITE_API_BASE_URL) {
+      // Remove any trailing slash and /api if present to avoid duplication
+      const base = import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '').replace(/\/api$/, '');
+      wsUrl = base.replace('http', 'ws') + `/api/interviews/${roomId}/ws`;
+    } else {
+      wsUrl = `${wsProtocol}//${window.location.host}/api/interviews/${roomId}/ws`;
+    }
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -815,7 +822,40 @@ const InterviewRoom = () => {
     );
   }
 
-  return null;
+  // Reconnecting / Transitioning fallback UI
+  // FAILURE MODES CONSIDERED:
+  // 1. Unhandled Status: Shows a premium loading indicator instead of white screen.
+  // 2. DISCONNECTED: The UI maintains the room layout or shows this transition if roomState is lost.
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', backgroundColor: '#1a202c', color: 'white', fontFamily: "'Inter', sans-serif",
+      background: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)'
+    }}>
+      <div style={{
+        padding: '40px', borderRadius: '24px', backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)',
+        textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+      }}>
+        <div style={{
+          width: '64px', height: '64px', border: '3px solid rgba(49, 130, 206, 0.2)',
+          borderTopColor: '#3182ce', borderRadius: '50%', animation: 'spin 1s linear infinite',
+          margin: '0 auto 24px auto'
+        }} />
+        <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px', color: '#e2e8f0' }}>
+          {roomState?.status === 'DISCONNECTED' ? 'Reconnecting...' : 'Syncing Interview State...'}
+        </h2>
+        <p style={{ color: '#94a3b8', fontSize: '14px' }}>
+          {roomState?.status === 'DISCONNECTED' 
+            ? 'Your connection was interrupted. We are trying to restore your session.' 
+            : 'Please wait while we prepare your room.'}
+        </p>
+      </div>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}} />
+    </div>
+  );
 };
 
 export default InterviewRoom;
