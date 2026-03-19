@@ -2,6 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const PreJoinScreen = ({ roomState, onJoin }) => {
   const [micStatus, setMicStatus] = useState('untested'); // 'untested', 'testing', 'success', 'error'
+  const [isInsecure, setIsInsecure] = useState(false);
+  
+  useEffect(() => {
+    // Detect if we are in an insecure context (HTTP on non-localhost)
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      setIsInsecure(true);
+      setMicStatus('error');
+    }
+  }, []);
+
   const [audioStream, setAudioStream] = useState(null);
   const [volume, setVolume] = useState(0);
   const audioContextRef = useRef(null);
@@ -116,9 +126,25 @@ const PreJoinScreen = ({ roomState, onJoin }) => {
             )}
           </div>
           {micStatus === 'error' && (
-            <p style={{ color: '#e53e3e', fontSize: '12px', marginTop: '8px' }}>
-              Please allow microphone permissions in your browser settings to continue.
-            </p>
+            <div style={{ marginTop: '15px', padding: '12px', backgroundColor: '#fff5f5', border: '1px solid #feb2b2', borderRadius: '8px' }}>
+              <p style={{ color: '#c53030', fontSize: '13px', margin: '0 0 8px 0', fontWeight: '600' }}>
+                {isInsecure ? '🚨 Insecure Connection Detected' : '❌ Microphone Access Denied'}
+              </p>
+              <p style={{ color: '#742a2a', fontSize: '12px', margin: 0, lineHeight: '1.5' }}>
+                {isInsecure ? (
+                  <>
+                    Browsers block microphone access on <b>http://</b> sites. To test this:
+                    <ol style={{ margin: '8px 0 0 20px', padding: 0 }}>
+                      <li>Open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
+                      <li>Add <code>{window.location.origin}</code> to the list</li>
+                      <li>Set to "Enabled" and Relaunch Chrome</li>
+                    </ol>
+                  </>
+                ) : (
+                  'Please allow microphone permissions in your browser settings to continue.'
+                )}
+              </p>
+            </div>
           )}
         </div>
 
