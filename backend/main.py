@@ -335,6 +335,8 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
     Receives audio chunks, runs STT, feeds Dialog Agent, runs TTS, and returns audio.
     """
     logger.info(f"WebSocket connection attempt for room: {room_id}")
+    await websocket.accept()
+    logger.info(f"WebSocket handshake complete for room: {room_id}")
     
     from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
     from agents.state import InterviewState
@@ -345,7 +347,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
     from agents.orchestrator import interview_graph
     
     # 1. Fetch Session (in a thread to avoid blocking async loop)
-    # We do this BEFORE accept to avoid holding an idle socket that might timeout
+    # Handshake is already done, so we can take our time here.
     def fetch_session():
         db: Session = SessionLocal()
         session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
@@ -362,16 +364,9 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         return data
 
     import asyncio
-    session_data = await asyncio.to_thread(fetch_session)
-    logger.info(f"Session data fetch result: {session_data}")
-    
     if not session_data:
-        # We haven't accepted yet, so we can't send a WS close code.
-        # But FastAPI will handle the rejection if we don't accept.
+        await websocket.close(code=1008, reason="Session not found")
         return
-        
-    await websocket.accept()
-    logger.info(f"WebSocket connection accepted and initialized for room: {room_id}")
         
     candidate_name = session_data["candidate_name"]
     job_role = session_data["job_role"]
