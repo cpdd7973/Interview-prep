@@ -12,11 +12,22 @@ import os
 import asyncio
 import json
 import base64
+import time
+import traceback
+from datetime import datetime
 
+# Heavy imports moved to top-level to prevent connection-time blocking
 from config import settings
-from database import init_db, get_db
+from database import init_db, get_db, SessionLocal, InterviewSession, SessionStatus, Speaker
 from scheduler import start_scheduler, shutdown_scheduler
-from mcp_servers.session_mcp import session_mcp
+from mcp_servers.session_mcp import session_mcp, UpdateStatusInput, LogTranscriptInput
+from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
+from agents.state import InterviewState
+from agents.interviewer_agent import interviewer_node
+from agents.orchestrator import interview_graph
+from langchain_core.messages import HumanMessage, AIMessage
+from fastapi import WebSocket, WebSocketDisconnect
+# Imports moved to top
 
 # Configure logging
 logging.basicConfig(
@@ -135,14 +146,8 @@ async def schedule_interview(interview_data: dict):
     Schedule a new interview.
     Called by admin dashboard.
     """
-    from agents.orchestrator import interview_graph
-    
     # Run the orchestrator graph with PENDING status to trigger the scheduler node
     try:
-        # Move imports INSIDE try block to catch logic/dependency crashes
-        from agents.orchestrator import interview_graph
-        from datetime import datetime
-        
         # Verify Critical Env Vars before proceeding
         if not settings.groq_api_key or "your_" in settings.groq_api_key:
             raise ValueError("GROQ_API_KEY is missing or using placeholder value in .env")
@@ -171,7 +176,6 @@ async def schedule_interview(interview_data: dict):
         }
         
         # LangGraph invoke
-        import asyncio
         result = await asyncio.to_thread(interview_graph.invoke, initial_state)
         
         if result.get("error"):
@@ -186,7 +190,6 @@ async def schedule_interview(interview_data: dict):
             "status": result.get("status")
         }
     except Exception as e:
-        import traceback
         error_trace = traceback.format_exc()
         logger.error(f"❌ CRITICAL SERVER ERROR: {e}\n{error_trace}")
         return {
@@ -324,30 +327,16 @@ async def get_evaluation(room_id: str):
     finally:
         db.close()
 
-from fastapi import WebSocket, WebSocketDisconnect
-import tempfile
-import os
-
 @app.websocket("/api/interviews/{room_id}/ws")
 async def interview_websocket(websocket: WebSocket, room_id: str):
     """
     WebSocket endpoint for real-time WebRTC/Audio streaming between Candidate and Agent.
-    Receives audio chunks, runs STT, feeds Dialog Agent, runs TTS, and returns audio.
     """
     logger.info(f"WebSocket connection attempt for room: {room_id}")
     await websocket.accept()
     logger.info(f"WebSocket handshake complete for room: {room_id}")
     
-    from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
-    from agents.state import InterviewState
-    from agents.interviewer_agent import interviewer_node
-    from database import SessionLocal, InterviewSession, SessionStatus, Speaker
-    from langchain_core.messages import HumanMessage, AIMessage
-    from mcp_servers.session_mcp import session_mcp, UpdateStatusInput, LogTranscriptInput
-    from agents.orchestrator import interview_graph
-    
     # 1. Fetch Session (in a thread to avoid blocking async loop)
-    # Handshake is already done, so we can take our time here.
     def fetch_session():
         db: Session = SessionLocal()
         session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
@@ -363,7 +352,6 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         db.close()
         return data
 
-    import asyncio
     session_data = await asyncio.to_thread(fetch_session)
     logger.info(f"Session data fetch result: {session_data}")
     
@@ -712,7 +700,6 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 )
                 break
             except Exception as inner_e:
-                import traceback
                 logger.error(f"Error during audio processing pipeline loop in room {room_id}: {inner_e}")
                 logger.error(traceback.format_exc())
                 
