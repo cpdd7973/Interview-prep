@@ -29,6 +29,7 @@ from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpe
 from agents.state import InterviewState
 from agents.interviewer_agent import interviewer_node
 from langchain_core.messages import HumanMessage, AIMessage
+from mcp_servers.question_bank_mcp import question_bank_mcp
 # from fastapi import WebSocket, WebSocketDisconnect (already imported above)
 # Imports moved to top
 
@@ -75,6 +76,20 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Interview Agent System...")
     init_db()
     start_scheduler()
+    
+    # Background heavy initialization to satisfy healthchecks 
+    # (prevents container timeout while ChromaDB syncs)
+    async def bg_init():
+        try:
+            logger.info("Triggering background dependency initialization...")
+            # Use to_thread for the CPU-bound ChromaDB synchronization
+            await asyncio.to_thread(question_bank_mcp.initialize)
+            logger.info("Background dependency initialization complete")
+        except Exception as e:
+            logger.error(f"Background initialization failed: {e}")
+
+    asyncio.create_task(bg_init())
+    
     logger.info("System ready")
     
     yield

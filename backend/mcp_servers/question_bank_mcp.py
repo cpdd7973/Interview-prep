@@ -64,9 +64,25 @@ class QuestionBankServer:
             "semantic_search": self.semantic_search
         }
         
-        # Initialize Vector DB
-        self.chroma_client = chromadb.Client()
+        # Lazy-loaded Vector DB
+        self._chroma_client = None
+        self._initialized = False
+
+    @property
+    def chroma_client(self):
+        """Lazy initialization of ChromaDB client."""
+        if self._chroma_client is None:
+            logger.info("Initializing ChromaDB client...")
+            self._chroma_client = chromadb.Client()
+        return self._chroma_client
+
+    def initialize(self):
+        """Explicitly load data. Should be called in a background task to prevent blocking startup."""
+        if self._initialized:
+            return
+        logger.info("Starting background synchronization of Question Bank to ChromaDB...")
         self._load_initial_data()
+        self._initialized = True
 
     def _get_collection(self, role: str):
         collection_name = f"{role}_questions".replace("-", "_").replace(" ", "_").lower()
