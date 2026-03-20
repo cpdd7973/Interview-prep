@@ -16,10 +16,11 @@ services:
       - ./backend/logs:/app/logs
       - ./reports:/reports
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   frontend:
     user: "root"

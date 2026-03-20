@@ -20,18 +20,11 @@ import time
 import traceback
 from datetime import datetime
 
-# Heavy imports moved to top-level to prevent connection-time blocking
+# LIGHTWEIGHT imports only — heavy deps load inside interview_websocket()
 from config import settings
-from database import init_db, get_db, SessionLocal, InterviewSession, SessionStatus, Speaker
+from database import init_db, get_db
 from scheduler import start_scheduler, shutdown_scheduler
-from mcp_servers.session_mcp import session_mcp, UpdateStatusInput, LogTranscriptInput
-from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
-from agents.state import InterviewState
-from agents.interviewer_agent import interviewer_node
-from langchain_core.messages import HumanMessage, AIMessage
-from mcp_servers.question_bank_mcp import question_bank_mcp
-# from fastapi import WebSocket, WebSocketDisconnect (already imported above)
-# Imports moved to top
+from mcp_servers.session_mcp import session_mcp
 
 # Configure logging
 logging.basicConfig(
@@ -76,20 +69,6 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Interview Agent System...")
     init_db()
     start_scheduler()
-    
-    # Background heavy initialization to satisfy healthchecks 
-    # (prevents container timeout while ChromaDB syncs)
-    async def bg_init():
-        try:
-            logger.info("Triggering background dependency initialization...")
-            # Use to_thread for the CPU-bound ChromaDB synchronization
-            await asyncio.to_thread(question_bank_mcp.initialize)
-            logger.info("Background dependency initialization complete")
-        except Exception as e:
-            logger.error(f"Background initialization failed: {e}")
-
-    asyncio.create_task(bg_init())
-    
     logger.info("System ready")
     
     yield
@@ -166,6 +145,8 @@ async def schedule_interview(interview_data: dict):
     """
     # Run the orchestrator graph with PENDING status to trigger the scheduler node
     try:
+        from agents.orchestrator import interview_graph
+        
         # Verify Critical Env Vars before proceeding
         if not settings.groq_api_key or "your_" in settings.groq_api_key:
             raise ValueError("GROQ_API_KEY is missing or using placeholder value in .env")
@@ -353,6 +334,14 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
     logger.info(f"WebSocket connection attempt for room: {room_id}")
     await websocket.accept()
     logger.info(f"WebSocket handshake complete for room: {room_id}")
+    
+    # Heavy imports — loaded once per process, cached by Python after first call
+    from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
+    from mcp_servers.session_mcp import UpdateStatusInput, LogTranscriptInput
+    from agents.state import InterviewState
+    from agents.interviewer_agent import interviewer_node
+    from database import SessionLocal, InterviewSession, SessionStatus, Speaker
+    from langchain_core.messages import HumanMessage, AIMessage
     
     # 1. Fetch Session (in a thread to avoid blocking async loop)
     def fetch_session():
