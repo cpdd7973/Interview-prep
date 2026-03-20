@@ -8,15 +8,35 @@ Each entry uses this structure:
 
 ---
 **ID**: ISSUE-001  
-**Date**: YYYY-MM-DD  
-**Symptom**: What the user reported or what broke  
-**Root cause**: What was actually wrong  
-**Skill consulted**: e.g. `backend-api-orchestration`  
-**Fix applied**: Short description of what changed  
-**Files changed**: list of files  
+**Date**: 2026-03-19  
+**Symptom**: White screen after joining meeting room.  
+**Root cause**: Component returned null on DISCONNECTED status and polling stopped.  
+**Skill consulted**: `frontend-interview-ui`  
+**Fix applied**: Updated `getViewState` to handle DISCONNECTED, added Reconnecting UI, and fixed polling logic.  
+**Files changed**: `InterviewRoom.jsx`, `.env`  
 **Recurrence**: 0  
 **Self-heal triggered**: No  
 ---
 
 ## Log
-(entries appended here automatically)
+---
+**ID**: ISSUE-001  
+**Date**: 2026-03-19  
+**Symptom**: White screen after joining meeting room.  
+**Root cause**: Component returned null on DISCONNECTED status and polling stopped.  
+**Skill consulted**: `frontend-interview-ui`  
+**Fix applied**: Updated `getViewState` to handle DISCONNECTED, added Reconnecting UI, and fixed polling logic.  
+**Files changed**: `InterviewRoom.jsx`, `.env`  
+**Recurrence**: 0  
+**Self-heal triggered**: No  
+---
+**ID**: ISSUE-002  
+**Date**: 2026-03-20  
+**Symptom**: AI voice not heard and candidate audio not capturing on Oracle Cloud.  
+**Root cause**: Edge-TTS returned 403 Forbidden (datacenter block) and MediaRecorder mimeType mismatch.  
+**Skill consulted**: `voice-speech-integration`, `frontend-interview-ui`  
+**Fix applied**: Added Browser TTS fallback, hardened MediaRecorder cycle, and added diagnostic telemetry.  
+**Files changed**: `InterviewRoom.jsx`, `main.py`, `README.md`, `CHANGELOG.md`  
+**Recurrence**: 0  
+**Self-heal triggered**: No  
+---

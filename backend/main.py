@@ -498,6 +498,10 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         audio_buffer = []
         MAX_BUFFER_CHUNKS = 4 # ~8 seconds of audio before forced transcription
         
+        # Deduplication state for room
+        last_chunk_size = 0
+        last_chunk_at = 0
+        
         while True:
             try:
                 # 1. Receive message from frontend
@@ -535,9 +539,18 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 elif "bytes" in message:
                     # Each blob is a complete WebM file (frontend stop/restarts MediaRecorder)
                     audio_data = message["bytes"]
+                    now = time.time()
                     
                     # LOGGING for Oracle Cloud debugging
                     logger.debug(f"[{room_id}] Received binary chunk: {len(audio_data)} bytes")
+                    
+                    # Deduplication (Defense in depth)
+                    if len(audio_data) == last_chunk_size and (now - last_chunk_at) < 2.0:
+                        logger.warning(f"[{room_id}] 🛡️ Ignoring duplicate binary chunk (size={len(audio_data)})")
+                        continue
+                    
+                    last_chunk_size = len(audio_data)
+                    last_chunk_at = now
                     
                     if len(audio_data) < 1000:
                         # Too small — probably silence

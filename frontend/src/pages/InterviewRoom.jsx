@@ -226,11 +226,7 @@ const InterviewRoom = () => {
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunks.push(e.data);
-          // Optional: Send interim chunks if they get large
-          if (e.data.size > 50000 && ws.readyState === WebSocket.OPEN) {
-            ws.send(e.data);
-            setBytesSent(prev => prev + e.data.size);
-          }
+          // REMOVED redundant ws.send(e.data) to prevent double-send and invalid fragments
         }
       };
 
@@ -352,8 +348,8 @@ const InterviewRoom = () => {
         // VAD LOGIC
         // Only monitor for candidate speech if AI is NOT speaking and recorder is active
         if (!isAISpeakingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          // Normal ambient noise usually triggers levels 0-3. Speech triggers levels > 4.
-          if (level > 4) {
+          // Hardened VAD: Threshold increased from 4 to 6 to ignore ambient noise
+          if (level > 6) {
             if (!isSpeakingRef.current) {
               console.log("[MIC] 🗣️ Speech detected...");
               isSpeakingRef.current = true;
@@ -529,12 +525,13 @@ const InterviewRoom = () => {
       }
     } else {
       // AI finished — wait a brief moment for speaker echo to dissipate, then start recording
+      // ECHO GUARD: Increased from 500ms to 800ms for Oracle Cloud environment
       if (wsRef.current?.readyState === WebSocket.OPEN && micStreamRef.current) {
-        console.log("[MIC] ⏳ AI finished. Waiting 500ms for echo to clear...");
+        console.log("[MIC] ⏳ AI finished. Waiting 800ms for echo to clear...");
         recordingCycleRef.current = setTimeout(() => {
           console.log("[MIC] ▶️ Starting mic capture now");
           startRecordingCycle(wsRef.current, micStreamRef.current);
-        }, 500);
+        }, 800);
       }
     }
   }, [isAISpeaking]);
