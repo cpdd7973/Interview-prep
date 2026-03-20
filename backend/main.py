@@ -418,15 +418,23 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         
         # json already imported at top level
         while True:
-            init_msg = await websocket.receive()
-            if init_msg.get("text"):
-                try:
-                    init_data = json.loads(init_msg["text"])
-                    if init_data.get("type") == "start":
-                        logger.info("Frontend ready signal received. Proceeding with initial greeting.")
-                        break
-                except json.JSONDecodeError:
-                    pass
+            try:
+                init_msg = await websocket.receive()
+                if init_msg.get("type") == "websocket.disconnect":
+                    logger.info(f"Frontend disconnected before greeting in room {room_id}")
+                    return # Exit the entire handler
+                
+                if init_msg.get("text"):
+                    try:
+                        init_data = json.loads(init_msg["text"])
+                        if init_data.get("type") == "start":
+                            logger.info("Frontend ready signal received. Proceeding with initial greeting.")
+                            break
+                    except json.JSONDecodeError:
+                        pass
+            except (WebSocketDisconnect, RuntimeError) as e:
+                logger.warning(f"WebSocket closed while waiting for 'start' in room {room_id}: {e}")
+                return
 
         # 3. Initial Greeting — ALWAYS fire on new WebSocket connect
         # Clear stale messages from previous sessions to start fresh
@@ -693,20 +701,24 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                     await websocket.close(code=1000, reason="Interview Completed")
                     break
 
+            except (WebSocketDisconnect, RuntimeError) as e:
+                logger.warning(f"WebSocket closed in room {room_id}: {e}")
+                
+                # Update status and exit
+                await asyncio.to_thread(
+                    session_mcp.update_status,
+                    UpdateStatusInput(room_id=room_id, status=SessionStatus.DISCONNECTED)
+                )
+                break
             except Exception as inner_e:
                 import traceback
-                logger.error(f"Error during audio processing pipeline loop: {inner_e}")
+                logger.error(f"Error during audio processing pipeline loop in room {room_id}: {inner_e}")
                 logger.error(traceback.format_exc())
                 
                 # BREAK loop on critical socket errors to prevent infinite spinning
                 error_msg = str(inner_e)
-                if any(x in error_msg for x in ["WebSocket is not connected", "already closed", "once a disconnect message", "ConnectionClosed"]):
-                    logger.warning(f"Socket closed ({error_msg}). Breaking loop.")
-                    # Trigger disconnect explicitly
-                    await asyncio.to_thread(
-                        session_mcp.update_status,
-                        UpdateStatusInput(room_id=room_id, status=SessionStatus.DISCONNECTED)
-                    )
+                if any(x in error_msg for x in ["already closed", "once a disconnect message", "ConnectionClosed", "was closed"]):
+                    logger.warning(f"Socket closed via exception ({error_msg}). Breaking loop.")
                     break
                 
     except WebSocketDisconnect:
