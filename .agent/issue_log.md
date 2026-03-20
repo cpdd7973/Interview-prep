@@ -53,10 +53,10 @@ Each entry uses this structure:
 **ID**: ISSUE-004  
 **Date**: 2026-03-21  
 **Symptom**: Backend RuntimeError: "Cannot call 'receive' once a disconnect message has been received."  
-**Root cause**: WebSocket receiver loop not gracefully catching disconnect exceptions during greeting phase.  
+**Root cause**: WebSocket receiver loop not gracefully catching disconnect exceptions during greeting phase; send operations missing guards.  
 **Skill consulted**: `backend-api-orchestration`  
-**Fix applied**: Wrapped `receive()` calls in `try...except (WebSocketDisconnect, RuntimeError)` and added explicit disconnect checks.  
+**Fix applied**: Wrapped ALL WebSocket operations (`receive`, `send_json`, `send_bytes`) in `try...except (WebSocketDisconnect, RuntimeError)`.  
 **Files changed**: `main.py`  
-**Recurrence**: 0  
-**Self-heal triggered**: No  
+**Recurrence**: 1  
+**Self-heal triggered**: Yes (Patched `backend-api-orchestration` skill)  
 ---

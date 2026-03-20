@@ -440,14 +440,13 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         # Clear stale messages from previous sessions to start fresh
         chat_state["messages"] = []
         logger.info(f"Sending initial greeting for room {room_id}")
+        
         try:
             # Run agent with timeout to prevent infinite hang
             agent_result = await asyncio.wait_for(
                 interviewer_node(chat_state),
                 timeout=60.0
             )
-            logger.info(f"interviewer_node returned: {list(agent_result.keys())}")
-            
             # Update local state
             if "messages" in agent_result:
                 chat_state["messages"].extend(agent_result["messages"])
@@ -457,49 +456,40 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 chat_state["questions_asked"].extend(agent_result["questions_asked"])
                 
             initial_response = agent_result["messages"][-1].content
-        except asyncio.TimeoutError:
-            logger.error("interviewer_node timed out after 60s — using fallback greeting")
-            initial_response = f"Hello {candidate_name}! Welcome to your interview for the {job_role} position at {company}. I'm your interviewer today. Let's begin — could you start by telling me about your background and experience?"
-            chat_state["messages"].append(AIMessage(content=initial_response))
-        except Exception as agent_err:
-            logger.error(f"interviewer_node failed: {agent_err}", exc_info=True)
-            initial_response = f"Hello {candidate_name}! Welcome to your interview for the {job_role} position at {company}. I'm your interviewer today. Let's begin — could you start by telling me about your background and experience?"
-            chat_state["messages"].append(AIMessage(content=initial_response))
-        
-        logger.info(f"Initial AI Greeting: {initial_response}")
-        
-        # Send AI text IMMEDIATELY
-        logger.info("Sending initial transcript to websocket...")
-        await websocket.send_json({"type": "transcript", "speaker": "AI", "text": initial_response})
-        
-        await asyncio.to_thread(
-            session_mcp.log_transcript_chunk,
-            LogTranscriptInput(room_id=room_id, speaker=Speaker.AI, content=initial_response, question_id=chat_state.get("current_question_id"))
-        )
-        
-        # TTS synthesis — wrapped in try/except so text still works even if TTS fails
-        try:
-            logger.info("Synthesizing initial greeting audio...")
+            
+            logger.info(f"Initial AI Greeting: {initial_response}")
+            
+            # GUARDED SEND: If client disconnected while AI was thinking, exit now
+            await websocket.send_json({"type": "transcript", "speaker": "AI", "text": initial_response})
+            
+            await asyncio.to_thread(
+                session_mcp.log_transcript_chunk,
+                LogTranscriptInput(room_id=room_id, speaker=Speaker.AI, content=initial_response, question_id=chat_state.get("current_question_id"))
+            )
+            
+            # TTS synthesis
             tts_result = await asyncio.wait_for(
                 voice_mcp.synthesize_speech(SynthesizeSpeechInput(text=initial_response)),
                 timeout=30.0
             )
             if tts_result.get("success"):
-                audio_path = tts_result["audio_path"]
-                logger.info(f"Sending {os.path.getsize(audio_path)} bytes of initial audio...")
-                with open(audio_path, "rb") as f:
+                # GUARDED SEND
+                with open(tts_result["audio_path"], "rb") as f:
                     mp3_bytes = f.read()
                 await websocket.send_bytes(mp3_bytes)
-                os.remove(audio_path)
+                os.remove(tts_result["audio_path"])
                 logger.info("Initial greeting sent successfully")
-            else:
-                logger.error(f"Initial TTS failed: {tts_result}")
-        except asyncio.TimeoutError:
-            logger.error("TTS timed out after 30s — text greeting was already sent")
-        except Exception as tts_err:
-            logger.error(f"TTS error: {tts_err}")
-    except Exception as e:
-        logger.error(f"Error sending initial greeting: {e}", exc_info=True)
+                
+        except (WebSocketDisconnect, RuntimeError) as ws_err:
+            logger.warning(f"WebSocket closed during initial greeting in room {room_id}: {ws_err}")
+            return
+        except Exception as e:
+            logger.error(f"Error during initial greeting in room {room_id}: {e}", exc_info=True)
+            # Non-socket errors allow us to continue to the main loop if possible (so we don't return here)
+            
+    except Exception as outer_e:
+        logger.error(f"Critical error in room {room_id} setup phase: {outer_e}", exc_info=True)
+        return
 
     try:
         # Loop for continuous conversation

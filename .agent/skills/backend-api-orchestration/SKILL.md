@@ -458,7 +458,10 @@ class ToolRegistry:
             if attempt < tool.max_retries:
                 await asyncio.sleep(0.5 * (attempt + 1))
                 return await self.execute(tool_name, tool_input, session_id, attempt + 1)
-            return {
+      
+## Amendment — 2026-03-21
+**Issue addressed**: ISSUE-004  
+**Correction**: In FastAPI/Starlette, WebSocket operations (`receive`, `send_json`, `send_bytes`) during long-running async tasks (like LLM runs or TTS) MUST be individually guarded with `try...except (WebSocketDisconnect, RuntimeError)`. If a disconnect is detected, the handler should `return` or `break` immediately to prevent "infinite error spinning" or `RuntimeError` tracebacks in logs. Never assume the socket is still open after an `await` call.
                 "error": f"Tool '{tool_name}' timed out after {tool.timeout_seconds}s",
                 "success": False,
             }
