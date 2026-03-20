@@ -2,13 +2,17 @@
 FastAPI main application entry point.
 Handles all HTTP endpoints and lifecycle management.
 """
-from fastapi import FastAPI, Depends, HTTPException
+import os
+# CRITICAL: Disable ChromaDB telemetry before it starts to avoid 'capture()' errors 
+# and log-bloat on low-resource cloud instances.
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 import logging
 import tempfile
-import os
 import asyncio
 import json
 import base64
@@ -24,9 +28,8 @@ from mcp_servers.session_mcp import session_mcp, UpdateStatusInput, LogTranscrip
 from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
 from agents.state import InterviewState
 from agents.interviewer_agent import interviewer_node
-from agents.orchestrator import interview_graph
 from langchain_core.messages import HumanMessage, AIMessage
-from fastapi import WebSocket, WebSocketDisconnect
+# from fastapi import WebSocket, WebSocketDisconnect (already imported above)
 # Imports moved to top
 
 # Configure logging
