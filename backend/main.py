@@ -416,13 +416,12 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         # Wait for the frontend to signal it is ready before sending the initial greeting
         logger.info(f"Waiting for frontend 'start' signal for room {room_id}...")
         
-        # json already imported at top level
         while True:
             try:
                 init_msg = await websocket.receive()
                 if init_msg.get("type") == "websocket.disconnect":
                     logger.info(f"Frontend disconnected before greeting in room {room_id}")
-                    return # Exit the entire handler
+                    return
                 
                 if init_msg.get("text"):
                     try:
@@ -436,30 +435,34 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 logger.warning(f"WebSocket closed while waiting for 'start' in room {room_id}: {e}")
                 return
 
-        # 3. Initial Greeting — ALWAYS fire on new WebSocket connect
-        # Clear stale messages from previous sessions to start fresh
+        # 3. Initial Greeting
         chat_state["messages"] = []
         logger.info(f"Sending initial greeting for room {room_id}")
         
         try:
-            # Run agent with timeout to prevent infinite hang
-            agent_result = await asyncio.wait_for(
-                interviewer_node(chat_state),
-                timeout=60.0
-            )
-            # Update local state
-            if "messages" in agent_result:
-                chat_state["messages"].extend(agent_result["messages"])
-            if "current_question_id" in agent_result:
-                chat_state["current_question_id"] = agent_result["current_question_id"]
-            if "questions_asked" in agent_result:
-                chat_state["questions_asked"].extend(agent_result["questions_asked"])
-                
-            initial_response = agent_result["messages"][-1].content
+            try:
+                # Run agent with timeout to prevent infinite hang
+                agent_result = await asyncio.wait_for(
+                    interviewer_node(chat_state),
+                    timeout=60.0
+                )
+                # Update local state
+                if "messages" in agent_result:
+                    chat_state["messages"].extend(agent_result["messages"])
+                if "current_question_id" in agent_result:
+                    chat_state["current_question_id"] = agent_result["current_question_id"]
+                if "questions_asked" in agent_result:
+                    chat_state["questions_asked"].extend(agent_result["questions_asked"])
+                    
+                initial_response = agent_result["messages"][-1].content
+            except Exception as agent_err:
+                logger.error(f"interviewer_node failed in room {room_id}: {agent_err}")
+                initial_response = f"Hello {candidate_name}! Welcome. I'm having a technical glitch, but let's proceed. Tell me about yourself?"
+                chat_state["messages"].append(AIMessage(content=initial_response))
             
             logger.info(f"Initial AI Greeting: {initial_response}")
             
-            # GUARDED SEND: If client disconnected while AI was thinking, exit now
+            # GUARDED SEND
             await websocket.send_json({"type": "transcript", "speaker": "AI", "text": initial_response})
             
             await asyncio.to_thread(
@@ -467,25 +470,33 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 LogTranscriptInput(room_id=room_id, speaker=Speaker.AI, content=initial_response, question_id=chat_state.get("current_question_id"))
             )
             
-            # TTS synthesis
-            tts_result = await asyncio.wait_for(
-                voice_mcp.synthesize_speech(SynthesizeSpeechInput(text=initial_response)),
-                timeout=30.0
-            )
-            if tts_result.get("success"):
-                # GUARDED SEND
-                with open(tts_result["audio_path"], "rb") as f:
-                    mp3_bytes = f.read()
-                await websocket.send_bytes(mp3_bytes)
-                os.remove(tts_result["audio_path"])
-                logger.info("Initial greeting sent successfully")
+            # TTS synthesis with explicit signal on failure
+            try:
+                tts_result = await asyncio.wait_for(
+                    voice_mcp.synthesize_speech(SynthesizeSpeechInput(text=initial_response)),
+                    timeout=30.0
+                )
+                if tts_result.get("success"):
+                    with open(tts_result["audio_path"], "rb") as f:
+                        mp3_bytes = f.read()
+                    await websocket.send_bytes(mp3_bytes)
+                    os.remove(tts_result["audio_path"])
+                    logger.info("Initial greeting sent successfully")
+                else:
+                    raise Exception("TTS synthesis returned success=False")
+            except Exception as tts_err:
+                logger.error(f"Initial TTS failed for room {room_id}: {tts_err}")
+                await websocket.send_json({"type": "audio_failed"})
                 
         except (WebSocketDisconnect, RuntimeError) as ws_err:
             logger.warning(f"WebSocket closed during initial greeting in room {room_id}: {ws_err}")
             return
         except Exception as e:
             logger.error(f"Error during initial greeting in room {room_id}: {e}", exc_info=True)
-            # Non-socket errors allow us to continue to the main loop if possible (so we don't return here)
+            try:
+                await websocket.send_json({"type": "audio_failed"})
+            except:
+                pass
             
     except Exception as outer_e:
         logger.error(f"Critical error in room {room_id} setup phase: {outer_e}", exc_info=True)

@@ -183,6 +183,7 @@ const InterviewRoom = () => {
 
   // VAD Refs
   const isSpeakingRef = useRef(false);
+  const speechStartRef = useRef(null); // When sound first crossed threshold
   const silenceStartRef = useRef(null);
 
   // Keep ref in sync with state
@@ -348,27 +349,35 @@ const InterviewRoom = () => {
         // VAD LOGIC
         // Only monitor for candidate speech if AI is NOT speaking and recorder is active
         if (!isAISpeakingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          // Hardened VAD: Threshold increased from 4 to 6 to ignore ambient noise
-          if (level > 6) {
+          // Expert VAD (Priya): Threshold 3, Min Duration 400ms
+          const VAD_THRESHOLD = 3;
+          const MIN_SPEECH_MS = 400;
+          const SILENCE_TIMEOUT = 1500; // Snappier send (1.5s vs 2s)
+
+          if (level > VAD_THRESHOLD) {
             if (!isSpeakingRef.current) {
-              console.log("[MIC] 🗣️ Speech detected...");
-              isSpeakingRef.current = true;
+              // Start tracking potential speech
+              if (!speechStartRef.current) {
+                speechStartRef.current = Date.now();
+                console.log("[VAD] 👂 Hearing something...");
+              } else if (Date.now() - speechStartRef.current > MIN_SPEECH_MS) {
+                console.log("[VAD] 🗣️ Speech confirmed (min duration hit)");
+                isSpeakingRef.current = true;
+              }
             }
             // Reset silence timer because they are speaking
             silenceStartRef.current = null;
           } else {
             // Silence detected
+            speechStartRef.current = null; // Reset "hearing" state if it was just a click
+
             if (isSpeakingRef.current) {
               if (!silenceStartRef.current) {
                 silenceStartRef.current = Date.now();
-              } else if (Date.now() - silenceStartRef.current > 2000) {
-                // 2 seconds of continuous silence means they've finished their turn
-                console.log("[MIC] 🤫 Speech ended (2s silence). Stopping recording to send...");
+              } else if (Date.now() - silenceStartRef.current > SILENCE_TIMEOUT) {
+                console.log("[VAD] 🤫 Turn ended (silence detected).");
                 isSpeakingRef.current = false;
                 silenceStartRef.current = null;
-
-                // Stopping the recorder triggers onstop -> which sends the WebSocket message!
-                // Then it automatically restarts.
                 mediaRecorderRef.current.stop();
               }
             }
@@ -482,6 +491,14 @@ const InterviewRoom = () => {
         } else if (data.type === 'interview_complete') {
           console.log("🎉 Interview completed signal received.");
           setPendingCompletion(true);
+        } else if (data.type === 'audio_failed') {
+          console.warn("⚠️ AI Audio generation failed. Unblocking mic for candidate.");
+          // Clear fallback timer
+          if (ttsFallbackTimerRef.current) {
+            clearTimeout(ttsFallbackTimerRef.current);
+            ttsFallbackTimerRef.current = null;
+          }
+          setIsAISpeaking(false);
         } else if (data.type === 'pong') {
           // Heartbeat response
         }
@@ -797,20 +814,29 @@ const InterviewRoom = () => {
               </p>
               {/* Mic Level Indicator — helps verify the mic is working */}
               {!isAISpeaking && (
-                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
-                  <span style={{ fontSize: '13px', color: '#a0aec0' }}>🎙️ Mic Level:</span>
-                  <div style={{ width: '150px', height: '8px', backgroundColor: '#1a202c', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${Math.min(micLevel * 3.3, 100)}%`,
-                      height: '100%',
-                      backgroundColor: micLevel > 5 ? '#48bb78' : micLevel > 2 ? '#ecc94b' : '#e53e3e',
-                      borderRadius: '4px',
-                      transition: 'width 0.1s ease'
-                    }} />
+                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', width: '100%' }}>
+                    <span style={{ fontSize: '13px', color: '#a0aec0' }}>🎙️ Level:</span>
+                    <div style={{ width: '180px', height: '10px', backgroundColor: '#1a202c', borderRadius: '5px', overflow: 'hidden', position: 'relative' }}>
+                      {/* Threshold Marker */}
+                      <div style={{ 
+                        position: 'absolute', left: `${3 * 3.3}%`, top: 0, bottom: 0, width: '2px', 
+                        backgroundColor: 'rgba(255,255,255,0.4)', zIndex: 2 
+                      }} title="VAD Threshold" />
+                      
+                      <div style={{
+                        width: `${Math.min(micLevel * 3.3, 100)}%`,
+                        height: '100%',
+                        backgroundColor: micLevel > 3 ? '#48bb78' : micLevel > 1.5 ? '#ecc94b' : '#e53e3e',
+                        borderRadius: '4px',
+                        transition: 'width 0.1s ease'
+                      }} />
+                    </div>
                   </div>
-                  <span style={{ fontSize: '11px', color: micLevel > 5 ? '#48bb78' : '#e53e3e', fontWeight: '600' }}>
-                    {micLevel > 5 ? `Voice (${micLevel})` : micLevel > 2 ? `Low (${micLevel})` : `Silent (${micLevel})`}
-                  </span>
+                  <div style={{ fontSize: '11px', color: '#718096', display: 'flex', gap: '15px' }}>
+                    <span>VAD Status: <strong style={{ color: isSpeakingRef.current ? '#48bb78' : '#cbd5e0' }}>{isSpeakingRef.current ? 'SENDING' : speechStartRef.current ? 'HEARING' : 'IDLE'}</strong></span>
+                    <span>Level: <strong>{micLevel.toFixed(1)}</strong></span>
+                  </div>
                 </div>
               )}
             </div>
