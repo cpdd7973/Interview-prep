@@ -2,6 +2,21 @@
 
 **CRITICAL INSTRUCTION:** These rules apply unconditionally to ALL agents and skills across the system. No skill persona (no matter how senior) is allowed to violate these rules. Read these before writing any code.
 
+---
+
+## 0. Agent Behavior — Mandatory on Every Prompt
+
+Before doing anything else on every prompt, the agent MUST follow this sequence:
+
+1. Read `.agents/orchestrator.md` and follow the full execution sequence.
+2. Consult relevant skill(s) in `.agents/skills/` — never skip this even for simple fixes.
+3. Check `.agents/issue_log.md` for prior occurrences of this problem before attempting a fix.
+4. After every change, trigger doc sync per `.agents/doc_sync.md`.
+5. Log every fix to `.agents/issue_log.md` and append a changelog entry to `CHANGELOG.md`.
+6. If the same issue has recurred 2+ times, trigger `.agents/self_healer.md` before re-applying any fix.
+
+---
+
 ## 1. Non-Blocking IO is Non-Negotiable
 - **Rule:** Never execute synchronous network calls, LLM invocations, or database queries inside the main event loop (e.g., FastAPI route handlers or APScheduler jobs without thread pools).
 - **Why:** Re-entrancy and deadlocks. A single synchronous LLM call taking 30 seconds will freeze all active WebSockets and dashboard polling.

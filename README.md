@@ -15,8 +15,8 @@ An MCP-based, multi-agent AI interview system designed for resource-constrained 
 - **Vector Search**: ChromaDB
 - **Scheduling**: APScheduler (SQLite jobstore)
 - **LLM**: Groq API (primary), Gemini API (async fallback)
-- **STT**: Native Browser Web Speech API (primary), Whisper tiny (CPU backup)
-- **TTS**: Edge-TTS (cloud)
+- **STT**: Native Browser Web Speech API / MediaRecorder (primary), Whisper (cloud/CPU backup)
+- **TTS**: Edge-TTS (primary cloud), Browser Web Speech API (fallback)
 - **WebRTC**: Daily.co
 
 ## Quick Start

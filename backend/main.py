@@ -536,6 +536,9 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                     # Each blob is a complete WebM file (frontend stop/restarts MediaRecorder)
                     audio_data = message["bytes"]
                     
+                    # LOGGING for Oracle Cloud debugging
+                    logger.debug(f"[{room_id}] Received binary chunk: {len(audio_data)} bytes")
+                    
                     if len(audio_data) < 1000:
                         # Too small — probably silence
                         continue

@@ -56,6 +56,12 @@ const InterviewRoom = () => {
   // Emergency browser STT fallback
   const [manualText, setManualText] = useState("");
 
+  // ── New Diagnostic & Fallback States ──
+  const [micActive, setMicActive] = useState(false);
+  const [bytesSent, setBytesSent] = useState(0);
+  const [lastAudioReceivedAt, setLastAudioReceivedAt] = useState(null);
+  const ttsFallbackTimerRef = useRef(null);
+
   // Fetch room status
   const fetchRoomStatus = async () => {
     // Cancel previous request if still pending
@@ -186,46 +192,80 @@ const InterviewRoom = () => {
 
   // Start a single recording cycle: record continuously until VAD detects silence
   const startRecordingCycle = (ws, stream) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    
     const chunks = [];
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : 'audio/webm';
-
-    const recorder = new MediaRecorder(stream, { mimeType });
-    mediaRecorderRef.current = recorder;
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-
-    recorder.onstop = () => {
-      // ECHO GUARD: If AI is speaking, this recording contains echo — discard it
-      if (isAISpeakingRef.current) {
-        console.log("[MIC] 🗑️ Discarding recording (AI was speaking — it's echo)");
-        return;
+    
+    // Hardened MIME type selection
+    const mimeTypes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+      'audio/wav'
+    ];
+    
+    let mimeType = '';
+    for (const type of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        mimeType = type;
+        break;
       }
+    }
+    
+    if (!mimeType) {
+      console.error("No supported MediaRecorder MIME types found");
+      return;
+    }
 
-      // Send the accumulated WebM blob
-      if (chunks.length > 0) {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        // Only send if it's substantial (likely contains speech)
-        if (blob.size > 1000 && ws.readyState === WebSocket.OPEN) {
-          console.log(`[MIC] 📤 Sending complete ${blob.size} byte WebM recording (VAD triggered)`);
-          ws.send(blob);
+    try {
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      setMicActive(true);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+          // Optional: Send interim chunks if they get large
+          if (e.data.size > 50000 && ws.readyState === WebSocket.OPEN) {
+            ws.send(e.data);
+            setBytesSent(prev => prev + e.data.size);
+          }
         }
-      }
+      };
 
-      // Start the next cycle immediately to catch the next utterance
-      if (ws.readyState === WebSocket.OPEN && !isAISpeakingRef.current) {
-        // Small delay to ensure clean restart
-        recordingCycleRef.current = setTimeout(() => {
-          startRecordingCycle(ws, stream);
-        }, 50);
-      }
-    };
+      recorder.onstop = () => {
+        setMicActive(false);
+        // ECHO GUARD: If AI is speaking, this recording contains echo — discard it
+        if (isAISpeakingRef.current) {
+          console.log("[MIC] 🗑️ Discarding recording (AI was speaking — it's echo)");
+          return;
+        }
 
-    recorder.start();
-    console.log("[MIC] 🎙️ Recording cycle started (Waiting for speech)...");
+        // Send the accumulated WebM blob
+        if (chunks.length > 0) {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          if (blob.size > 1000 && ws.readyState === WebSocket.OPEN) {
+            console.log(`[MIC] 📤 Sending complete ${blob.size} byte recording (VAD triggered)`);
+            ws.send(blob);
+            setBytesSent(prev => prev + blob.size);
+          }
+        }
+
+        // Start the next cycle immediately to catch the next utterance
+        if (ws.readyState === WebSocket.OPEN && !isAISpeakingRef.current) {
+          recordingCycleRef.current = setTimeout(() => {
+            startRecordingCycle(ws, stream);
+          }, 50);
+        }
+      };
+
+      recorder.start();
+      console.log(`[MIC] 🎙️ Recording cycle started with ${mimeType}`);
+    } catch (err) {
+      console.error("Error in recording cycle:", err);
+      setMicActive(false);
+    }
   };
 
   // Initialize mic — gets stream once, but does NOT start recording.
@@ -388,8 +428,16 @@ const InterviewRoom = () => {
 
     ws.onmessage = async (event) => {
       if (event.data instanceof Blob) {
-        // AI Audio response received — just play it
+        // AI Audio response received
         setIsAISpeaking(true);
+        setLastAudioReceivedAt(Date.now());
+        
+        // Clear fallback timer if it exists
+        if (ttsFallbackTimerRef.current) {
+          clearTimeout(ttsFallbackTimerRef.current);
+          ttsFallbackTimerRef.current = null;
+        }
+
         const audioUrl = URL.createObjectURL(event.data);
         const audio = new Audio(audioUrl);
 
@@ -407,17 +455,39 @@ const InterviewRoom = () => {
           setIsAISpeaking(false);
         }
       } else {
-        // Text transcript received — show it IMMEDIATELY in the chat
         const data = JSON.parse(event.data);
-        console.log("Transcript:", data);
+        console.log("WebSocket Message:", data);
+        
         if (data.type === 'transcript') {
           setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
+          
+          // ── TTS Fallback Logic ──
+          // If AI speaks but we haven't received audio blob within 2.5s, use browser TTS
+          if (data.speaker === 'AI') {
+            setIsAISpeaking(true); // Signal AI is "speaking" to block candidate mic
+            
+            ttsFallbackTimerRef.current = setTimeout(() => {
+              console.warn("⚠️ Backend TTS failed/timed out. Using Browser Web Speech API as fallback.");
+              const utterance = new SpeechSynthesisUtterance(data.text);
+              utterance.lang = 'en-US';
+              
+              utterance.onend = () => {
+                setTimeout(() => setIsAISpeaking(false), 500);
+              };
+              
+              utterance.onerror = (err) => {
+                console.error("Browser TTS Error:", err);
+                setIsAISpeaking(false);
+              };
+
+              window.speechSynthesis.speak(utterance);
+            }, 2500);
+          }
         } else if (data.type === 'interview_complete') {
-          // Interview finished — wait until AI stops speaking before transitioning
-          console.log("🎉 Interview completed signal received. Waiting for AI to finish speaking...");
+          console.log("🎉 Interview completed signal received.");
           setPendingCompletion(true);
         } else if (data.type === 'pong') {
-          // Heartbeat response — ignore
+          // Heartbeat response
         }
       }
     };
@@ -599,7 +669,38 @@ const InterviewRoom = () => {
         </div>
 
         {/* Main Content Area */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+          
+          {/* Floating Diagnostic Dashboard (Visible in Active room) */}
+          <div className="diagnostic-badge" style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(5px)',
+            padding: '8px 12px',
+            borderRadius: '12px',
+            fontSize: '11px',
+            color: 'white',
+            display: 'flex',
+            gap: '15px',
+            border: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                background: micActive ? '#4ade80' : '#64748b',
+                boxShadow: micActive ? '0 0 8px #4ade80' : 'none'
+              }}></div>
+              <span>Mic: {micActive ? 'CAPTURING' : 'IDLE'}</span>
+            </div>
+            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px' }}>
+              <span>Out: {(bytesSent / 1024).toFixed(1)} KB</span>
+            </div>
+          </div>
 
           {/* Left Sidebar: Transcript + Text Input (Priya's pattern) */}
           <div style={{
