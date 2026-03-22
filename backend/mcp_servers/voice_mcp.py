@@ -8,8 +8,10 @@ import logging
 import asyncio
 import tempfile
 import os
+import asyncio
+import tempfile
+import os
 import edge_tts
-import whisper
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +32,6 @@ class DetectSilenceInput(BaseModel):
     threshold_db: float = Field(-40.0, description="Silence threshold in dB")
     min_silence_duration: float = Field(0.5, description="Minimum silence duration in seconds")
 
-class WhisperClient:
-    """Lazy-loaded Whisper client to save RAM."""
-    def __init__(self):
-        self.model = None
-    
-    def transcribe(self, audio_file: str) -> str:
-        if not self.model:
-            logger.info("loading whisper 'tiny' model...")
-            self.model = whisper.load_model("tiny")
-        logger.info(f"Transcribing {audio_file}")
-        
-        # Whisper model output dict contains the 'text' key
-        result = self.model.transcribe(audio_file)
-        return result["text"]
-
-    def unload(self):
-        if self.model:
-            del self.model
-            self.model = None
-            logger.info("Unloaded whisper model")
 
 class VoiceMCPServer:
     """
@@ -60,7 +42,6 @@ class VoiceMCPServer:
     def __init__(self):
         self.name = "voice-mcp-server"
         self.version = "1.0.0"
-        self.whisper_client = WhisperClient()
         self.tools = {
             "transcribe_audio": self.transcribe_audio,
             "synthesize_speech": self.synthesize_speech,
@@ -69,33 +50,18 @@ class VoiceMCPServer:
     
     def transcribe_audio(self, input_data: TranscribeAudioInput) -> Dict[str, Any]:
         """
-        Transcribe audio using Whisper tiny.
-        Temp file is managed entirely within this function to prevent Windows locking issues.
+        Transcribe audio using Groq cloud STT.
+        Eliminates local Whisper/Torch dependencies to save disk/RAM.
         """
         try:
             import base64
             audio_bytes = base64.b64decode(input_data.audio_b64)
             
-            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
-                tmp.write(audio_bytes)
-                tmp.flush()
-                tmp_path = tmp.name
-                
-            try:
-                text = self.whisper_client.transcribe(tmp_path)
-                return {
-                    "success": True,
-                    "text": text.strip(),
-                    "file": tmp_path
-                }
-            finally:
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except:
-                        pass
+            # Delegate to the Groq implementation
+            return self.transcribe_audio_groq(audio_bytes)
+            
         except Exception as e:
-            logger.error(f"Error transcribing audio: {e}")
+            logger.error(f"Error in transcribe_audio: {e}")
             return {"success": False, "error": str(e)}
 
     def transcribe_audio_groq(self, audio_bytes: bytes) -> Dict[str, Any]:

@@ -54,6 +54,14 @@ Do not edit manually.
 **Warning**: none
 **Retries**: 0
 ---
+**Ref**: ISSUE-027
+**Date**: 2026-03-23
+**Risk level**: Medium
+**Verdict**: PASS
+**Checks failed**: none
+**Warning**: none
+**Retries**: 1
+---
 
 ## Log
 - [2026-03-22] ISSUE-020, ISSUE-021, ISSUE-022: PASS
@@ -61,3 +69,4 @@ Do not edit manually.
 - [2026-03-22] ISSUE-024: PASS (Rejoin Audio Kickstart logic).
 - [2026-03-22] ISSUE-025: PASS (Post-interview pipeline fixed with .ainvoke() and persistent report paths).
 - [2026-03-22] ISSUE-026: PASS (Initial Greeting Audio signaling and VAD tuning).
+- [2026-03-23] ISSUE-027: PASS (Disk Cleanup & Groq STT).

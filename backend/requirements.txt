@@ -14,11 +14,11 @@ chromadb==0.4.22
 # LLM & AI
 langchain>=0.2.0
 langchain-groq>=0.1.0
+groq>=0.13.0
 langchain-google-genai>=0.1.0
 langgraph>=0.2.20
 
 # Speech
-openai-whisper
 edge-tts>=6.1.13
 pydub==0.25.1
 
@@ -55,8 +55,3 @@ pytz==2024.1
 # Audio Processing
 numpy
 soundfile==0.12.1
-
-# Testing (optional)
-pytest==7.4.4
-pytest-asyncio==0.23.3
-httpx==0.26.0
