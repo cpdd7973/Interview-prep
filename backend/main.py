@@ -686,7 +686,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         db = SessionLocal()
                         try:
                             logger.info(f"🚀 Starting post-interview pipeline (evaluate → report → email)")
-                            await asyncio.to_thread(interview_graph.invoke, state)
+                            await interview_graph.ainvoke(state)
                             
                             session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
                             if session:

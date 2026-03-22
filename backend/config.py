@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     
+    # Storage
+    reports_dir: str = "./reports"
+    
     model_config = {
         "env_file": str(Path(__file__).parent.parent / ".env"),
         "case_sensitive": False,
@@ -83,7 +86,7 @@ settings = Settings()
 BASE_DIR = Path(__file__).parent
 PROMPTS_DIR = BASE_DIR / "prompts"
 QUESTION_BANK_DIR = BASE_DIR / "question_bank"
-REPORTS_DIR = BASE_DIR.parent / "reports"
+REPORTS_DIR = Path(settings.reports_dir)
 
 # Ensure directories exist
 REPORTS_DIR.mkdir(exist_ok=True)
