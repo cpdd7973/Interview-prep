@@ -425,7 +425,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             logger.info("Frontend ready signal received. Proceeding with initial greeting.")
                             
                             # 🚀 CRITICAL: Update database status to ACTIVE to prevent 15m timeout sweeper
-                            async def activate_session():
+                            def activate_session():
                                 db_session = SessionLocal()
                                 try:
                                     s = db_session.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
@@ -685,6 +685,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                     # Run evaluation + report pipeline in background
                     # (don't block the WebSocket close)
                     async def run_post_interview_pipeline(state):
+                        from agents.orchestrator import interview_graph
                         db = SessionLocal()
                         try:
                             logger.info(f"🚀 Starting post-interview pipeline (evaluate → report → email)")

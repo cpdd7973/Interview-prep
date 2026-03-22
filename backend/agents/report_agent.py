@@ -8,15 +8,13 @@ import logging
 import os
 
 from agents.state import InterviewState
-from config import settings
+from config import settings, REPORTS_DIR
 from mcp_servers.report_mcp import report_mcp, CompileReportInput, ExportPdfInput, EmailReportInput
 from database import SessionLocal, Evaluation
 
 logger = logging.getLogger(__name__)
 
-# Reports directory
-REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports")
-os.makedirs(REPORTS_DIR, exist_ok=True)
+# Reports directory is now imported from config.py
 
 def report_node(state: InterviewState) -> Dict[str, Any]:
     """
