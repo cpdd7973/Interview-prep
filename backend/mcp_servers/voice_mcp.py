@@ -144,6 +144,7 @@ class VoiceMCPServer:
                         return {"success": True, "text": ""}  # Return empty, it's silence
                 
                 # Hallucination filter — Whisper generates these on silent audio
+                # Using a set for exact matches and checking for repetitive hallucinations
                 HALLUCINATION_PHRASES = {
                     "thank you", "thank you.", "thanks.", "thanks",
                     "thank you for watching", "thank you for watching.",
@@ -153,12 +154,27 @@ class VoiceMCPServer:
                     "you", "okay", "okay.", "um", "uh",
                     "so", "the", "i", "a", "and",
                     "what is it on behalf of me",
-                    "what is it", "is it", "on behalf of me"
+                    "what is it", "is it", "on behalf of me",
+                    "thankyou", "thankyou thankyou", "thankyou thankyou thankyou"
                 }
-                if text.lower().strip(".,!? ") in HALLUCINATION_PHRASES:
-                    logger.debug(f"Groq Whisper hallucination filtered: '{text}'")
-                    return {"success": True, "text": ""}  # Return empty
                 
+                clean_text = text.lower().strip(".,!? ")
+                
+                # Check for repetitive single-word hallucinations like "thankyou thankyou thankyou"
+                words = clean_text.split()
+                if len(words) > 1 and all(w == words[0] for w in words) and words[0] in {"thankyou", "thank", "you", "thanks"}:
+                    logger.debug(f"Groq Whisper repetitive hallucination filtered: '{text}'")
+                    return {"success": True, "text": ""}
+
+                if clean_text in HALLUCINATION_PHRASES:
+                    logger.debug(f"Groq Whisper hallucination filtered: '{text}'")
+                    return {"success": True, "text": ""}
+                
+                # If the text is just "Thank you" followed by something very short, it's often an echo
+                if clean_text.startswith("thank you") and len(words) < 4:
+                    logger.debug(f"Groq Whisper short 'thank you' filter: '{text}'")
+                    return {"success": True, "text": ""}
+
                 logger.info(f"Groq Whisper transcribed: '{text}'")
                 return {"success": True, "text": text}
             finally:

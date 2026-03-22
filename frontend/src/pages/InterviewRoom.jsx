@@ -41,6 +41,7 @@ const InterviewRoom = () => {
   const [roomState, setRoomState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [systemStatus, setSystemStatus] = useState("Initializing connection...");
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [pendingCompletion, setPendingCompletion] = useState(false);
   const [forceCompleted, setForceCompleted] = useState(false); // Overrides polling
@@ -416,8 +417,8 @@ const InterviewRoom = () => {
     let heartbeatInterval = null;
 
     ws.onopen = () => {
-      console.log("WebSocket connected for audio streaming");
-
+      console.log("WebSocket connected");
+      setSystemStatus("Connected. Synchronizing with AI...");
       // Signal backend that frontend is ready
       ws.send(JSON.stringify({ type: 'start' }));
 
@@ -506,12 +507,16 @@ const InterviewRoom = () => {
         const data = JSON.parse(event.data);
         console.log("WebSocket Message:", data);
         
-        if (data.type === 'transcript') {
+        if (data.type === 'connection_ready') {
+          console.log("Backend signal: Connection ready.");
+          setSystemStatus(data.rejoined ? "Re-connected to active session." : "AI Agent is ready.");
+        } else if (data.type === 'status') {
+          setSystemStatus(data.text);
+        } else if (data.type === 'transcript') {
           setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
           
-          // ── TTS Fallback Logic ──
-          // If AI speaks but we haven't received audio blob within 5s, use browser TTS
           if (data.speaker === 'AI') {
+            setSystemStatus(""); // Clear warming-up status once AI speaks
             setIsAISpeaking(true); 
             lastAITextRef.current = data.text;
             
@@ -782,7 +787,7 @@ const InterviewRoom = () => {
             }}>
               {!isAISpeaking ? (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {micLevel > 4 ? (
+                  {micLevel > 12 ? (
                     <>
                       <span style={{ width: '6px', height: '6px', backgroundColor: '#38bdf8', borderRadius: '50%', boxShadow: '0 0 8px #38bdf8' }} />
                       Detecting speech...
@@ -850,6 +855,25 @@ const InterviewRoom = () => {
             </div>
 
             <div style={{ textAlign: 'center', maxWidth: '600px' }}>
+            {/* NEW: System/AI Status Feedback */}
+            {systemStatus && (
+              <div style={{
+                marginTop: '-20px',
+                padding: '6px 12px',
+                borderRadius: '20px',
+                backgroundColor: 'rgba(49, 130, 206, 0.1)',
+                color: '#63b3ed',
+                fontSize: '13px',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                animation: 'pulse 2s infinite'
+              }}>
+                <span style={{ width: '6px', height: '6px', backgroundColor: '#63b3ed', borderRadius: '50%' }}></span>
+                {systemStatus}
+              </div>
+            )}
               <h3 style={{ margin: '0 0 10px 0', fontSize: '24px', color: '#e2e8f0', fontWeight: '600' }}>{roomState.interviewer_designation}</h3>
               <p style={{
                 fontSize: '18px', color: '#a0aec0', lineHeight: '1.6',
