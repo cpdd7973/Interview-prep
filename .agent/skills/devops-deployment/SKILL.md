@@ -682,6 +682,33 @@ SECURITY
 - `references/terraform-modules.md` — AWS and GCP Terraform module structure, EKS/GKE cluster, RDS, ElastiCache, S3, IAM patterns
 - `references/observability-stack.md` — Full Grafana dashboard JSON, Datadog monitor templates, log pipeline design, distributed tracing setup
 
+---
+
+## ⚙️ Project Context (Interview-Prep Actual Stack)
+
+> [!IMPORTANT]
+> The generic examples above reference AWS, GCP, Kubernetes, Postgres, and Redis.
+> This project uses a SIMPLER stack. Always check this section first.
+
+| Component | Actual Implementation |
+|---|---|
+| **Cloud** | Oracle Cloud **VM.Standard.E2.1.Micro** (1 OCPU, **1GB RAM**, 0.48 Gbps network) |
+| **Swap** | 3GB swap disk configured to prevent OOM crashes during deployment |
+| **Container Runtime** | Docker Compose (not Kubernetes) |
+| **Reverse Proxy** | Nginx (system-level, not containerised) |
+| **Database** | SQLite (not Postgres) |
+| **Job Queue** | APScheduler (not Celery/BullMQ) |
+| **Backend** | Python 3.11 + FastAPI + Uvicorn (single worker) |
+| **Frontend** | Vite + React (served from container) |
+
+**Known Oracle Cloud Issues (ISSUE-005):**
+- **1GB RAM + 3GB swap = extremely memory-constrained.** Heavy Python imports swap-thrash, causing 60-90s+ startup times. Docker healthcheck `start_period` must be ≥120s.
+- **Datacenter IP blocking.** Edge-TTS returns 403 Forbidden from Oracle Cloud IPs. Browser TTS fallback needed (ISSUE-002).
+- **No auto-scaling.** Single container per service. Keep images minimal. Never load heavy dependencies at startup.
+- **Healthcheck best practice:** Use `curl -f http://localhost:8000/health` with `start_period: 120s`, `interval: 15s`, `timeout: 10s`, `retries: 5`.
+- **Import scoping is critical:** With only 1GB RAM, loading ChromaDB + LangChain + Whisper at startup causes severe swap-thrashing. Move heavy imports inside function bodies.
+- **Build with `--no-cache` sparingly.** On 1GB RAM, Docker builds can OOM. Prefer cached layers.
+
 
 ---
 

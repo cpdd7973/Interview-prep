@@ -431,6 +431,39 @@ const InterviewRoom = () => {
       // (handled by the isAISpeaking effect below).
       initMicStream();
     };
+    
+    // ── Helper: Browser TTS with Hard Timeout Safety Net (CORE Rule #7) ──
+    const _speakWithSafetyNet = (text) => {
+      if (!text || !window.speechSynthesis) {
+        setIsAISpeaking(false);
+        return;
+      }
+
+      setIsAISpeaking(true);
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+
+      // Estimate duration: ~15 chars per second + 3s buffer
+      const safetyTimeoutMs = (text.length / 15 * 1000) + 3000;
+      const safetyTimer = setTimeout(() => {
+        console.warn("🕒 TTS Safety Timeout fired. Forcing isAISpeaking to false.");
+        setIsAISpeaking(false);
+        window.speechSynthesis.cancel(); // Stop any hung synthesis
+      }, safetyTimeoutMs);
+
+      utterance.onend = () => {
+        clearTimeout(safetyTimer);
+        setTimeout(() => setIsAISpeaking(false), 500);
+      };
+
+      utterance.onerror = (err) => {
+        console.error("Browser TTS Error:", err);
+        clearTimeout(safetyTimer);
+        setIsAISpeaking(false);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
 
     ws.onmessage = async (event) => {
       if (event.data instanceof Blob) {
@@ -475,19 +508,7 @@ const InterviewRoom = () => {
             
             ttsFallbackTimerRef.current = setTimeout(() => {
               console.warn("⚠️ Backend TTS failed/timed out. Using Browser Web Speech API as fallback.");
-              const utterance = new SpeechSynthesisUtterance(data.text);
-              utterance.lang = 'en-US';
-              
-              utterance.onend = () => {
-                setTimeout(() => setIsAISpeaking(false), 500);
-              };
-              
-              utterance.onerror = (err) => {
-                console.error("Browser TTS Error:", err);
-                setIsAISpeaking(false);
-              };
-
-              window.speechSynthesis.speak(utterance);
+              _speakWithSafetyNet(data.text);
             }, 2500);
           }
         } else if (data.type === 'interview_complete') {
@@ -500,20 +521,10 @@ const InterviewRoom = () => {
             clearTimeout(ttsFallbackTimerRef.current);
             ttsFallbackTimerRef.current = null;
           }
-          // Immediately use browser TTS with the stored AI text
+          // Immediately use browser TTS with hard timeout safety net
           const aiText = lastAITextRef.current;
           if (aiText && window.speechSynthesis) {
-            setIsAISpeaking(true);
-            const utterance = new SpeechSynthesisUtterance(aiText);
-            utterance.lang = 'en-US';
-            utterance.onend = () => {
-              setTimeout(() => setIsAISpeaking(false), 500);
-            };
-            utterance.onerror = (err) => {
-              console.error("Browser TTS Error:", err);
-              setIsAISpeaking(false);
-            };
-            window.speechSynthesis.speak(utterance);
+            _speakWithSafetyNet(aiText);
           } else {
             setIsAISpeaking(false);
           }

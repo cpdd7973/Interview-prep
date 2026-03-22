@@ -448,6 +448,27 @@ TOTAL (degraded / mobile)      ~3.0–4.0s
 - `references/audio-processing.md` — Audio format guide, chunking strategies, noise suppression, browser MediaRecorder patterns
 - `references/provider-integration.md` — Full provider setup guides, WebSocket reconnection, cost optimisation, error handling per provider
 
+---
+
+## ⚙️ Project Context (Interview-Prep Actual Stack)
+
+> [!IMPORTANT]
+> The generic examples above reference ElevenLabs, Deepgram, and local Whisper.
+> This project uses a DIFFERENT stack. Always check this section first.
+
+| Component | Actual Implementation | File |
+|---|---|---|
+| **TTS** | Edge-TTS (`edge_tts` Python package) | `backend/mcp_servers/voice_mcp.py` |
+| **STT** | Groq Cloud Whisper API (`whisper-large-v3-turbo`) | `backend/mcp_servers/voice_mcp.py` |
+| **Audio Format** | WebM/Opus (browser MediaRecorder) | `frontend/src/pages/InterviewRoom.jsx` |
+| **Transport** | WebSocket binary frames (MP3 from backend) | `backend/main.py` |
+| **VAD** | Client-side RMS energy via Web Audio API | `frontend/src/pages/InterviewRoom.jsx` |
+| **Fallback TTS** | Browser `window.speechSynthesis` (unreliable) | `frontend/src/pages/InterviewRoom.jsx` |
+
+**Known Issues:**
+- **Edge-TTS returns 403 Forbidden on Oracle Cloud datacenter IPs** (ISSUE-002). Browser TTS fallback exists but is unreliable — `onend` may never fire (ISSUE-006).
+- **`window.speechSynthesis` must NEVER gate a critical state transition** (CORE_RULES Rule #7). Always add a hard timeout safety net.
+
 
 ---
 

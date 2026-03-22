@@ -6,11 +6,11 @@ After every code change, the agent must assess and update docs.
 
 | Change type | Docs to update |
 |---|---|
-| New endpoint or function | `docs/API.md`, `README.md` |
-| Architecture change | `docs/ARCHITECTURE.md` |
+| New endpoint or function | `README.md` (API section) |
+| Architecture change | `README.md` (Architecture section) |
 | Config/env var added | `README.md` (setup section) |
-| Bug fix | `CHANGELOG.md`, optionally `docs/KNOWN_ISSUES.md` |
-| New skill added | `.agents/skills/README.md` |
+| Bug fix | `CHANGELOG.md` |
+| New skill added | Update `.agent/skill_router.md` routing table |
 | Dependency added/removed | `README.md` (requirements section) |
 
 ## Update style
