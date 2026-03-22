@@ -22,6 +22,15 @@ Do not edit manually.
 **Warning**: none
 **Retries**: 0
 ---
+**Ref**: ISSUE-023
+**Date**: 2026-03-22
+**Risk level**: Medium
+**Verdict**: PASS
+**Checks failed**: none
+**Warning**: none
+**Retries**: 0
+---
 
 ## Log
 - [2026-03-22] ISSUE-020, ISSUE-021, ISSUE-022: PASS (High-risk audit completed for WebSocket and Audio fixes).
+- [2026-03-22] ISSUE-023: PASS (Transcript history restoration on rejoin).

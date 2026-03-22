@@ -105,6 +105,14 @@ const InterviewRoom = () => {
     };
   }, [roomId]);
 
+  // Sync messages from roomState on initial load (for rejoins)
+  useEffect(() => {
+    if (roomState?.transcript && messages.length === 0) {
+      console.log("Rehydrating messages from roomState:", roomState.transcript);
+      setMessages(roomState.transcript);
+    }
+  }, [roomState, messages.length]);
+
   // Polling logic based on status
   useEffect(() => {
     if (!roomState) return;

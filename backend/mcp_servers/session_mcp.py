@@ -152,6 +152,20 @@ class SessionMCPServer:
             now = datetime.utcnow()
             seconds_remaining = (session.scheduled_at - now).total_seconds()
             
+            # Fetch transcript chunks for this session
+            chunks = db.query(TranscriptChunk).filter(
+                TranscriptChunk.room_id == room_id
+            ).order_by(TranscriptChunk.timestamp).all()
+            
+            transcript_list = [
+                {
+                    "speaker": chunk.speaker.value,
+                    "text": chunk.content,
+                    "timestamp": chunk.timestamp.isoformat() + "Z"
+                }
+                for chunk in chunks
+            ]
+            
             return {
                 "success": True,
                 "room_id": session.room_id,
@@ -166,7 +180,8 @@ class SessionMCPServer:
                 "completed_at": session.completed_at.isoformat() + "Z" if session.completed_at else None,
                 "finished_at": session.finished_at.isoformat() + "Z" if session.finished_at else None,
                 "daily_room_url": session.daily_room_url,
-                "seconds_remaining": max(0, int(seconds_remaining))
+                "seconds_remaining": max(0, int(seconds_remaining)),
+                "transcript": transcript_list
             }
         
         except Exception as e:
