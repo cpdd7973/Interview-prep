@@ -423,6 +423,23 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         init_data = json.loads(init_msg["text"])
                         if init_data.get("type") == "start":
                             logger.info("Frontend ready signal received. Proceeding with initial greeting.")
+                            
+                            # 🚀 CRITICAL: Update database status to ACTIVE to prevent 15m timeout sweeper
+                            async def activate_session():
+                                db_session = SessionLocal()
+                                try:
+                                    s = db_session.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+                                    if s:
+                                        now = datetime.utcnow()
+                                        s.status = SessionStatus.ACTIVE
+                                        s.activated_at = now
+                                        s.joined_at = now
+                                        db_session.commit()
+                                        logger.info(f"✅ Session {room_id} status updated to ACTIVE in database.")
+                                finally:
+                                    db_session.close()
+                                    
+                            await asyncio.to_thread(activate_session)
                             break
                     except json.JSONDecodeError:
                         pass

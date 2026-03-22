@@ -92,12 +92,13 @@ Each entry uses this structure:
 **Root cause**: Recording trigger was only tied to `isAISpeaking` transitions. If the mic wasn't ready when the greeting finished, the recording cycle was never started.  
 **Skill consulted**: `frontend-interview-ui`  
 **Fix applied**:
-- **ISSUE-009 (Fix)**: Resolved double AI voice issue by cancelling the TTS fallback timer when primary audio arrives.
-- **ISSUE-013 (Fix)**: Resolved non-functional 'Leave Interview' and 'Cancel' buttons by switching to `useNavigate` and adding explicit cleanup.
-- **ISSUE-007 (Fix)**: Resolved Mic/VAD IDLE issue by adding `isMicReady` state and reactive recording triggers.
-- **ISSUE-008 (Fix)**: Resolved dashboard refresh loop by disabling hardcoded production HMR host in local development.
-- **Improved Diagnostics**: Updated the Mic status badge to show `WAITING` and `IDLE` states more accurately.
-- **Hardened TTS Fallback**: Implemented `_speakWithSafetyNet` for unreliable browser speechSynthesis (ISSUE-006).
+- [x] ISSUE-007: Fix Mic/VAD IDLE state at start
+- [x] ISSUE-008: Fix Dashboard Refresh Loop (HMR)
+- [x] ISSUE-009: Prevent Double AI Voice (TTS + Binary overlap)
+- [x] ISSUE-013: Fix Button Interactivity (Leave/Cancel)
+- [x] ISSUE-014: Fix 15-minute Session Timeout
+- [x] Finalize Walkthrough & Logs
+- [x] Push to Git for Server Testing
 **Files changed**: `InterviewRoom.jsx`, `vite.config.js`
 **Recurrence**: 1  
 **Self-heal triggered**: No  
