@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { listInterviews, scheduleInterview, cancelInterview } from '../services/api';
 import './Dashboard.css';
 
@@ -8,6 +8,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentTab, setCurrentTab] = useState('PENDING'); // PENDING, ACTIVE, COMPLETED
+  const [confirmingCancelRoomId, setConfirmingCancelRoomId] = useState(null);
+  const navigate = useNavigate();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -80,17 +82,24 @@ export default function Dashboard() {
     }
   };
 
-  const handleCancel = async (roomId) => {
-    if (!window.confirm("Are you sure you want to cancel this interview?")) return;
-    try {
-      const res = await cancelInterview(roomId);
-      if (res.success) {
-        fetchInterviews();
-      } else {
-        alert(res.error || "Failed to cancel.");
+  const handleCancelClick = async (roomId) => {
+    if (confirmingCancelRoomId === roomId) {
+      console.log(`[DASHBOARD] 🚫 Confirmed cancel for: ${roomId}`);
+      try {
+        const res = await cancelInterview(roomId);
+        if (res.success) {
+          setConfirmingCancelRoomId(null);
+          fetchInterviews();
+        } else {
+          alert(res.error || "Failed to cancel.");
+        }
+      } catch (err) {
+        alert("Error cancelling interview.");
       }
-    } catch (err) {
-      alert("Error cancelling interview.");
+    } else {
+      setConfirmingCancelRoomId(roomId);
+      // Reset after 3 seconds
+      setTimeout(() => setConfirmingCancelRoomId(null), 3000);
     }
   };
 
@@ -202,7 +211,8 @@ export default function Dashboard() {
                   key={i.room_id}
                   interview={i}
                   currentTab={currentTab}
-                  handleCancel={handleCancel}
+                  handleCancel={handleCancelClick}
+                  isConfirming={confirmingCancelRoomId === i.room_id}
                 />
               ))}
             </div>
@@ -214,7 +224,7 @@ export default function Dashboard() {
 }
 
 // Subcomponent to manage live timers per card
-function InterviewCard({ interview, currentTab, handleCancel }) {
+function InterviewCard({ interview, currentTab, handleCancel, isConfirming }) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -288,8 +298,12 @@ function InterviewCard({ interview, currentTab, handleCancel }) {
       </div>
       <div className="card-actions">
         {currentTab === 'PENDING' && (
-          <button onClick={() => handleCancel(interview.room_id)} className="btn-danger">
-            Cancel
+          <button 
+            onClick={() => handleCancel(interview.room_id)} 
+            className={isConfirming ? "btn-warning" : "btn-danger"}
+            style={{ transition: 'all 0.2s', fontWeight: isConfirming ? 'bold' : 'normal' }}
+          >
+            {isConfirming ? "Confirm Cancel?" : "Cancel"}
           </button>
         )}
         {currentTab === 'COMPLETED' && (

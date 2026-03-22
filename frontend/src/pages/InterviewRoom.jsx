@@ -10,7 +10,7 @@
  * - CANCELLED: Interview was cancelled
  */
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import CountdownTimer from '../components/CountdownTimer';
 import WaitingScreen from '../components/WaitingScreen';
 import VoiceIndicator from '../components/VoiceIndicator';
@@ -36,6 +36,8 @@ const EARLY_ENTRY_SECONDS = 5 * 60; // 5 minutes
 
 const InterviewRoom = () => {
   const { roomId } = useParams();
+  const navigate = useNavigate();
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [roomState, setRoomState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -473,8 +475,15 @@ const InterviewRoom = () => {
         
         // Clear fallback timer if it exists
         if (ttsFallbackTimerRef.current) {
+          console.log("[VOICE] 🛑 Binary audio received. Clearing browser TTS fallback timer.");
           clearTimeout(ttsFallbackTimerRef.current);
           ttsFallbackTimerRef.current = null;
+        }
+
+        // Hard fix for double-voice: Stop any ongoing browser synthesis immediately
+        if (window.speechSynthesis && window.speechSynthesis.speaking) {
+          console.warn("[VOICE] 🔇 Stopping ongoing browser TTS to play backend audio.");
+          window.speechSynthesis.cancel();
         }
 
         const audioUrl = URL.createObjectURL(event.data);
@@ -501,15 +510,22 @@ const InterviewRoom = () => {
           setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
           
           // ── TTS Fallback Logic ──
-          // If AI speaks but we haven't received audio blob within 2.5s, use browser TTS
+          // If AI speaks but we haven't received audio blob within 5s, use browser TTS
           if (data.speaker === 'AI') {
-            setIsAISpeaking(true); // Signal AI is "speaking" to block candidate mic
-            lastAITextRef.current = data.text; // Store for audio_failed fallback
+            setIsAISpeaking(true); 
+            lastAITextRef.current = data.text;
+            
+            // Clear any existing timer from a previous partial message
+            if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
             
             ttsFallbackTimerRef.current = setTimeout(() => {
-              console.warn("⚠️ Backend TTS failed/timed out. Using Browser Web Speech API as fallback.");
-              _speakWithSafetyNet(data.text);
-            }, 2500);
+              // Safety check: is the browser still waiting for audio?
+              if (ttsFallbackTimerRef.current) {
+                console.warn("⚠️ Backend TTS fallback triggered after 5s timeout.");
+                _speakWithSafetyNet(data.text);
+                ttsFallbackTimerRef.current = null;
+              }
+            }, 5000); // Increased from 2.5s to 5s for stability
           }
         } else if (data.type === 'interview_complete') {
           console.log("🎉 Interview completed signal received.");
@@ -903,19 +919,27 @@ const InterviewRoom = () => {
 
           <button
             onClick={() => {
-              if (window.confirm("Are you sure you want to end this interview early?")) {
-                window.location.href = '/';
+              if (showLeaveConfirm) {
+                console.log("[ROOM] 🚪 Confirmed leave. Navigating to dashboard...");
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  wsRef.current.close();
+                }
+                navigate('/');
+              } else {
+                setShowLeaveConfirm(true);
+                // Reset after 3 seconds if not clicked again
+                setTimeout(() => setShowLeaveConfirm(false), 3000);
               }
             }}
             style={{
-              padding: '12px 32px', fontSize: '16px', fontWeight: '500',
-              backgroundColor: '#e53e3e', color: 'white', border: 'none',
-              borderRadius: '8px', cursor: 'pointer', transition: 'background-color 0.2s'
+              padding: '12px 32px', fontSize: '16px', fontWeight: 'bold',
+              backgroundColor: showLeaveConfirm ? '#ff8c00' : '#e53e3e', 
+              color: 'white', border: 'none',
+              borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s',
+              zIndex: 100
             }}
-            onMouseOver={(e) => e.target.style.backgroundColor = '#c53030'}
-            onMouseOut={(e) => e.target.style.backgroundColor = '#e53e3e'}
           >
-            Leave Interview
+            {showLeaveConfirm ? "Confirm Exit?" : "Leave Interview"}
           </button>
         </div>
       </div >

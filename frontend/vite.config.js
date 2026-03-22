@@ -7,11 +7,11 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: ['.ngrok-free.dev', '.ngrok.io', 'prep.interviewer.dpdns.org'],
-    hmr: {
-      host: 'prep.interviewer.dpdns.org',
-      protocol: 'wss',
-      clientPort: 443
-    },
+    // hmr: {
+    //   host: 'prep.interviewer.dpdns.org',
+    //   protocol: 'wss',
+    //   clientPort: 443
+    // },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

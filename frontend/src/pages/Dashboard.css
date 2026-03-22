@@ -251,6 +251,40 @@ button.tab-btn.active:hover {
   border-color: #EF4444;
 }
 
+.btn-warning {
+  padding: 10px 16px;
+  background: #f59e0b;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
+.btn-warning {
+  padding: 10px 16px;
+  background: #f59e0b;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
 .btn-success {
   padding: 10px 16px;
   background: #16A34A;

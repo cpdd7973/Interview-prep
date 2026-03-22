@@ -86,3 +86,57 @@ Each entry uses this structure:
 3. **Did not verify the original behavior was preserved.** Before my fix, `audio_failed` → mic works. After my fix, `audio_failed` → mic broken. A simple side-by-side analysis would have caught this.  
 4. **Scope creep.** User asked to fix "AI not asking questions". Agent expanded scope to refactor the entire audio_failed flow.  
 ---
+**ID**: ISSUE-007  
+**Date**: 2026-03-22  
+**Symptom**: Mic and VAD Status remain IDLE after AI greeting.  
+**Root cause**: Recording trigger was only tied to `isAISpeaking` transitions. If the mic wasn't ready when the greeting finished, the recording cycle was never started.  
+**Skill consulted**: `frontend-interview-ui`  
+**Fix applied**:
+- **ISSUE-009 (Fix)**: Resolved double AI voice issue by cancelling the TTS fallback timer when primary audio arrives.
+- **ISSUE-013 (Fix)**: Resolved non-functional 'Leave Interview' and 'Cancel' buttons by switching to `useNavigate` and adding explicit cleanup.
+- **ISSUE-007 (Fix)**: Resolved Mic/VAD IDLE issue by adding `isMicReady` state and reactive recording triggers.
+- **ISSUE-008 (Fix)**: Resolved dashboard refresh loop by disabling hardcoded production HMR host in local development.
+- **Improved Diagnostics**: Updated the Mic status badge to show `WAITING` and `IDLE` states more accurately.
+- **Hardened TTS Fallback**: Implemented `_speakWithSafetyNet` for unreliable browser speechSynthesis (ISSUE-006).
+**Files changed**: `InterviewRoom.jsx`, `vite.config.js`
+**Recurrence**: 1  
+**Self-heal triggered**: No  
+---
+**ID**: ISSUE-008  
+**Date**: 2026-03-22  
+**Symptom**: Dashboard page keeps refreshing every few seconds, wiping form data.  
+**Root cause**: Hardcoded production HMR host in `vite.config.js` caused constant WebSocket failures and full-page reloads in local development.  
+**Skill consulted**: `devops-deployment`  
+**Fix applied**: Commented out the production HMR host in `vite.config.js`.  
+**Files changed**: `vite.config.js`  
+**Recurrence**: 0  
+**Self-heal triggered**: No  
+---
+**ID**: ISSUE-013  
+**Date**: 2026-03-22  
+**Symptom**: "Leave Interview" and "Cancel" buttons reported as non-functional/stuck.  
+**Root cause**: Reliance on `window.confirm` and `window.location.href`, which can be unreliable or blocked in certain browser contexts.  
+**Skill consulted**: `frontend-interview-ui`  
+**Fix applied**:  
+1. **Removed `window.confirm`**: Replaced blocking browser dialogs with a two-step "Click-to-Confirm" UI pattern (e.g., "Leave" → "Confirm Exit?") in both `InterviewRoom.jsx` and `Dashboard.jsx`. This eliminates the risk of browser-level dialog blocking.
+2. **Transitioned to `useNavigate`**: Switched to React Router's `useNavigate` for more reliable routing without full page reloads.
+3. **Explicit Socket Cleanup**: Added direct `ws.close()` calls in the room exit handler.
+4. **Enhanced UI Feedback**: Added diagnostic logging and a dedicated CSS class (`.btn-warning`) for the confirmation state.
+**Files changed**: `InterviewRoom.jsx`, `Dashboard.jsx`  
+**Recurrence**: 0  
+**Self-heal triggered**: No  
+---
+**ID**: ISSUE-009  
+**Date**: 2026-03-22  
+**Symptom**: Hearing two AI voices simultaneously (overlapping).  
+**Root cause**: Race condition where the browser TTS fallback was not cancelled when actual binary audio arrived.  
+**Skill consulted**: `frontend-interview-ui`  
+**Fix applied**: 
+1. Increased fallback timeout to 5000ms (to accommodate slow Oracle Cloud inference).
+2. Added `clearTimeout(ttsFallbackTimerRef.current)` to the binary audio handler.
+3. Added `window.speechSynthesis.cancel()` to the binary audio handler to immediately silence any overlapping fallback voice.
+4. Added an `if (ttsFallbackTimerRef.current)` guard inside the timeout callback to prevent late triggers.
+**Files changed**: `InterviewRoom.jsx`  
+**Recurrence**: 0  
+**Self-heal triggered**: No  
+---
