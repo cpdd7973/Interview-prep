@@ -43,6 +43,7 @@ const InterviewRoom = () => {
   const [error, setError] = useState(null);
   const [systemStatus, setSystemStatus] = useState("Initializing connection...");
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [isMicAvailable, setIsMicAvailable] = useState(false);
   const [pendingCompletion, setPendingCompletion] = useState(false);
   const [forceCompleted, setForceCompleted] = useState(false); // Overrides polling
   const [isAIOptedIn, setIsAIOptedIn] = useState(false);
@@ -325,6 +326,7 @@ const InterviewRoom = () => {
       // STEP 4: Get the REAL mic stream
       const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       micStreamRef.current = stream;
+      setIsMicAvailable(true); // Signal that the stream is ready for use
 
       // Log all available audio tracks for debugging
       const tracks = stream.getAudioTracks();
@@ -610,6 +612,14 @@ const InterviewRoom = () => {
       }
     }
   }, [isAISpeaking]);
+
+  // ── REJOIN KICKSTART: Start recording if ready but AI is silent (ISSUE-024) ──
+  useEffect(() => {
+    if (!isAISpeaking && !micActive && isMicAvailable && wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log("[MIC] 🚀 REJOIN KICKSTART: System ready, AI silent. Starting capture.");
+      startRecordingCycle(wsRef.current, micStreamRef.current);
+    }
+  }, [isAISpeaking, micActive, isMicAvailable]);
 
   // Transition to completed UI when AI finishes speaking the final message
   useEffect(() => {
