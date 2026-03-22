@@ -22,9 +22,14 @@ from datetime import datetime
 
 # LIGHTWEIGHT imports only — heavy deps load inside interview_websocket()
 from config import settings
-from database import init_db, get_db
+from database import init_db, get_db, SessionLocal, InterviewSession, SessionStatus, Speaker
 from scheduler import start_scheduler, shutdown_scheduler
-from mcp_servers.session_mcp import session_mcp
+from mcp_servers.session_mcp import session_mcp, UpdateStatusInput, LogTranscriptInput
+from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
+from agents.state import InterviewState
+from agents.interviewer_agent import interviewer_node
+from agents.orchestrator import interview_graph
+from langchain_core.messages import HumanMessage, AIMessage
 
 # Configure logging
 logging.basicConfig(
@@ -69,6 +74,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Interview Agent System...")
     init_db()
     start_scheduler()
+    
+    # 🚀 HEAVY PRE-WARM: Force import and initialization of agents to avoid cold-start delays
+    try:
+        logger.info("Pre-warming agents and MCP servers...")
+        _ = interview_graph # Already imported at top, but ensure it's touched
+        from mcp_servers.voice_mcp import voice_mcp
+        # Pre-touch the voice synthesis if possible
+        logger.info("Agent pre-warm complete.")
+    except Exception as e:
+        logger.warning(f"Pre-warm encountered a minor issue (usually safe to ignore): {e}")
+
     logger.info("System ready")
     
     yield
@@ -335,13 +351,8 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
     await websocket.accept()
     logger.info(f"WebSocket handshake complete for room: {room_id}")
     
-    # Heavy imports — loaded once per process, cached by Python after first call
-    from mcp_servers.voice_mcp import voice_mcp, TranscribeAudioInput, SynthesizeSpeechInput
-    from mcp_servers.session_mcp import UpdateStatusInput, LogTranscriptInput
-    from agents.state import InterviewState
-    from agents.interviewer_agent import interviewer_node
-    from database import SessionLocal, InterviewSession, SessionStatus, Speaker
-    from langchain_core.messages import HumanMessage, AIMessage
+    # 0. Signal to frontend that handshake is Done (prevents client-side timeout)
+    await websocket.send_json({"type": "connection_ready"})
     
     # 1. Fetch Session (in a thread to avoid blocking async loop)
     def fetch_session():
