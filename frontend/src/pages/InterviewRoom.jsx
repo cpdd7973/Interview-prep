@@ -61,6 +61,7 @@ const InterviewRoom = () => {
   const [bytesSent, setBytesSent] = useState(0);
   const [lastAudioReceivedAt, setLastAudioReceivedAt] = useState(null);
   const ttsFallbackTimerRef = useRef(null);
+  const lastAITextRef = useRef(null);
 
   // Fetch room status
   const fetchRoomStatus = async () => {
@@ -470,6 +471,7 @@ const InterviewRoom = () => {
           // If AI speaks but we haven't received audio blob within 2.5s, use browser TTS
           if (data.speaker === 'AI') {
             setIsAISpeaking(true); // Signal AI is "speaking" to block candidate mic
+            lastAITextRef.current = data.text; // Store for audio_failed fallback
             
             ttsFallbackTimerRef.current = setTimeout(() => {
               console.warn("⚠️ Backend TTS failed/timed out. Using Browser Web Speech API as fallback.");
@@ -492,13 +494,29 @@ const InterviewRoom = () => {
           console.log("🎉 Interview completed signal received.");
           setPendingCompletion(true);
         } else if (data.type === 'audio_failed') {
-          console.warn("⚠️ AI Audio generation failed. Unblocking mic for candidate.");
-          // Clear fallback timer
+          console.warn("⚠️ AI Audio generation failed. Using browser TTS fallback.");
+          // Clear the delayed fallback timer — we'll trigger TTS immediately
           if (ttsFallbackTimerRef.current) {
             clearTimeout(ttsFallbackTimerRef.current);
             ttsFallbackTimerRef.current = null;
           }
-          setIsAISpeaking(false);
+          // Immediately use browser TTS with the stored AI text
+          const aiText = lastAITextRef.current;
+          if (aiText && window.speechSynthesis) {
+            setIsAISpeaking(true);
+            const utterance = new SpeechSynthesisUtterance(aiText);
+            utterance.lang = 'en-US';
+            utterance.onend = () => {
+              setTimeout(() => setIsAISpeaking(false), 500);
+            };
+            utterance.onerror = (err) => {
+              console.error("Browser TTS Error:", err);
+              setIsAISpeaking(false);
+            };
+            window.speechSynthesis.speak(utterance);
+          } else {
+            setIsAISpeaking(false);
+          }
         } else if (data.type === 'pong') {
           // Heartbeat response
         }
