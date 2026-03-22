@@ -496,6 +496,9 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         with open(tts_result["audio_path"], "rb") as f:
                             await websocket.send_bytes(f.read())
                         os.remove(tts_result["audio_path"])
+                    else:
+                        logger.error(f"Initial TTS failed (success=False): {tts_result.get('error')}")
+                        await websocket.send_json({"type": "audio_failed"})
                 except Exception as tts_err:
                     logger.error(f"Initial TTS failed for room {room_id}: {tts_err}")
                     await websocket.send_json({"type": "audio_failed"})

@@ -19,7 +19,7 @@ langgraph>=0.2.20
 
 # Speech
 openai-whisper
-edge-tts==6.1.9
+edge-tts>=6.1.13
 pydub==0.25.1
 
 # Scheduling

@@ -46,9 +46,18 @@ Do not edit manually.
 **Warning**: none
 **Retries**: 0
 ---
+**Ref**: ISSUE-026
+**Date**: 2026-03-22
+**Risk level**: Medium
+**Verdict**: PASS
+**Checks failed**: none
+**Warning**: none
+**Retries**: 0
+---
 
 ## Log
 - [2026-03-22] ISSUE-020, ISSUE-021, ISSUE-022: PASS
 - [2026-03-22] ISSUE-023: PASS
 - [2026-03-22] ISSUE-024: PASS (Rejoin Audio Kickstart logic).
 - [2026-03-22] ISSUE-025: PASS (Post-interview pipeline fixed with .ainvoke() and persistent report paths).
+- [2026-03-22] ISSUE-026: PASS (Initial Greeting Audio signaling and VAD tuning).

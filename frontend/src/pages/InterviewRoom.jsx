@@ -363,8 +363,8 @@ const InterviewRoom = () => {
         // VAD LOGIC
         // Only monitor for candidate speech if AI is NOT speaking and recorder is active
         if (!isAISpeakingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          // Expert VAD (Priya): Threshold 3, Min Duration 400ms
-          const VAD_THRESHOLD = 3;
+          // Expert VAD (Priya): Threshold 2 (tuned for sensitivity), Min Duration 400ms
+          const VAD_THRESHOLD = 2;
           const MIN_SPEECH_MS = 400;
           const SILENCE_TIMEOUT = 1500; // Snappier send (1.5s vs 2s)
 
@@ -547,6 +547,7 @@ const InterviewRoom = () => {
           setPendingCompletion(true);
         } else if (data.type === 'audio_failed') {
           console.warn("⚠️ AI Audio generation failed. Using browser TTS fallback.");
+          setSystemStatus("");
           // Clear the delayed fallback timer — we'll trigger TTS immediately
           if (ttsFallbackTimerRef.current) {
             clearTimeout(ttsFallbackTimerRef.current);
