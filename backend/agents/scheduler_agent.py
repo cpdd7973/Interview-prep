@@ -77,18 +77,22 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
             
         html_body = email_body.replace("\n", "<br>")
         
-        # 4. Create Calendar Event (always attempt — MCP handles priority stack)
-        cal_resp = calendar_mcp.create_event(CreateEventInput(
-            summary=f"Interview: {candidate_name} - {job_role}",
-            start_time=scheduled_at,
-            end_time=scheduled_at + timedelta(minutes=settings.max_interview_duration_minutes),
-            attendees=[candidate_email],
-            description=f"Generated Interview Room: {frontend_link}\n\n{email_body}"
-        ))
-        if cal_resp.get("success"):
-            logger.info(f"✅ Created calendar event via {cal_resp.get('method', 'unknown')}")
+        # 4. Create Calendar Event (only if OAuth2 credentials are configured)
+        #    GWS CLI is too slow when unauthenticated (~6s timeout per call)
+        if calendar_mcp._has_oauth2_credentials():
+            cal_resp = calendar_mcp.create_event(CreateEventInput(
+                summary=f"Interview: {candidate_name} - {job_role}",
+                start_time=scheduled_at,
+                end_time=scheduled_at + timedelta(minutes=settings.max_interview_duration_minutes),
+                attendees=[candidate_email],
+                description=f"Generated Interview Room: {frontend_link}\n\n{email_body}"
+            ))
+            if cal_resp.get("success"):
+                logger.info(f"✅ Created calendar event via {cal_resp.get('method', 'unknown')}")
+            else:
+                logger.warning(f"⚠️ Calendar event creation failed: {cal_resp.get('error')}. Continuing without it.")
         else:
-            logger.warning(f"⚠️ Calendar event creation failed: {cal_resp.get('error')}. Continuing without it.")
+            logger.info("⏭️ Skipping calendar event (no OAuth2 credentials configured)")
             
         # 5. Create Session in Database
         sess_resp = session_mcp.create_session(CreateSessionInput(
@@ -103,20 +107,29 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
         
         db_room_id = sess_resp.get("room_id", room_id)
         
-        # 6. Send Email notification (always attempt — MCP handles priority stack)
-        gmail_resp = gmail_mcp.send_email(SendEmailInput(
-            to_email=candidate_email,
-            subject=f"Your upcoming interview for {job_role}",
-            body=html_body,
-            is_html=True
-        ))
-        if gmail_resp.get("success"):
-            logger.info(f"✅ Sent invitation email via {gmail_resp.get('method', 'unknown')}")
-        else:
-            logger.warning(f"⚠️ Invitation email failed: {gmail_resp.get('error')}. Continuing without it.")
-
-        # 7. Arm Activation Job in APScheduler
+        # 6. Arm Activation Job in APScheduler (instant)
         session_mcp.arm_scheduler_job(room_id=db_room_id, scheduled_at=scheduled_at)
+
+        # 7. Send Email notification in BACKGROUND (don't block API response)
+        #    SMTP takes ~4 seconds — no reason to make the user wait
+        import threading
+        def _send_email_bg():
+            try:
+                gmail_resp = gmail_mcp.send_email(SendEmailInput(
+                    to_email=candidate_email,
+                    subject=f"Your upcoming interview for {job_role}",
+                    body=html_body,
+                    is_html=True
+                ))
+                if gmail_resp.get("success"):
+                    logger.info(f"✅ Sent invitation email via {gmail_resp.get('method', 'unknown')}")
+                else:
+                    logger.warning(f"⚠️ Invitation email failed: {gmail_resp.get('error')}")
+            except Exception as e:
+                logger.error(f"❌ Background email send failed: {e}")
+        
+        threading.Thread(target=_send_email_bg, daemon=True).start()
+        logger.info(f"📧 Email queued for background delivery to {candidate_email}")
 
         return {
             "room_id": db_room_id,
