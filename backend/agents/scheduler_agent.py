@@ -10,11 +10,10 @@ from typing import Dict, Any
 from datetime import datetime, timedelta
 import uuid
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage
 
 from agents.state import InterviewState
 from config import settings
-from utils.groq_client import llm_client
 
 # Import MCP Servers directly for programmatic access
 from mcp_servers.room_mcp import room_mcp, CreateRoomInput
@@ -64,29 +63,17 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
         
         frontend_link = f"{settings.frontend_url}/interview/{room_id}"
         
-        # 3. Use LLM to draft personalized invitation context
-        prompt = f"""
-        Draft a brief, professional invitation email to a candidate for an AI-led interview.
-        Candidate: {candidate_name}
-        Role: {job_role}
-        Company: {state.get('company', 'Our Company')}
-        Interviewer: {state.get('interviewer_designation', 'AI Interviewer')}
-        Time: {scheduled_at.strftime('%Y-%m-%d %H:%M UTC')}
-        URL: {frontend_link}
-        
-        Keep it warm, encouraging, and under 150 words. Do NOT include pleasantries like 'Subject:' in the body.
-        """
-        
-        try:
-            email_body = llm_client.invoke([HumanMessage(content=prompt)])
-        except Exception as e:
-            logger.warning(f"LLM failed to draft email, using fallback. {e}")
-            email_body = (
-                f"Hi {candidate_name},\n\n"
-                f"You are invited to an interview for the {job_role} position.\n"
-                f"Please join here at the scheduled time: {frontend_link}\n\n"
-                "Best,\nInterview Agent System"
-            )
+        # 3. Build email body — use direct template for speed
+        #    (LLM draft was failing on sync invoke and adding latency)
+        email_body = (
+            f"Hi {candidate_name},\n\n"
+            f"You are invited to an interview for the {job_role} position "
+            f"at {state.get('company', 'Our Company')}.\n\n"
+            f"Your interviewer will be: {state.get('interviewer_designation', 'AI Interviewer')}\n"
+            f"Scheduled time: {scheduled_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+            f"Please join here at the scheduled time:\n{frontend_link}\n\n"
+            "Best regards,\nInterview Agent System"
+        )
             
         html_body = email_body.replace("\n", "<br>")
         

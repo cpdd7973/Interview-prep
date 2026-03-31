@@ -48,18 +48,46 @@ def _get_gws_path() -> Optional[str]:
     return path
 
 
+_gws_auth_verified: Optional[bool] = None
+
+
 def gws_available() -> bool:
-    """Check if gws CLI is installed and responds."""
+    """Check if gws CLI is installed AND authenticated. Caches result."""
+    global _gws_auth_verified
+    
+    # If we already know auth failed, skip the slow subprocess call
+    if _gws_auth_verified is False:
+        return False
+    if _gws_auth_verified is True:
+        return True
+    
     path = _get_gws_path()
     if not path:
+        _gws_auth_verified = False
         return False
     try:
         result = subprocess.run(
             [path, "--version"],
             capture_output=True, text=True, timeout=5
         )
-        return result.returncode == 0
+        if result.returncode != 0:
+            _gws_auth_verified = False
+            return False
+        
+        # Quick auth test — if this fails, we cache it to avoid future 5s waits
+        auth_test = subprocess.run(
+            [path, "gmail", "+triage", "--format", "json"],
+            capture_output=True, text=True, timeout=5
+        )
+        if "Access denied" in (auth_test.stderr or "") or auth_test.returncode != 0:
+            logger.info("⚠️ GWS CLI installed but NOT authenticated. Skipping GWS calls.")
+            _gws_auth_verified = False
+            return False
+        
+        _gws_auth_verified = True
+        return True
     except Exception:
+        _gws_auth_verified = False
         return False
 
 
