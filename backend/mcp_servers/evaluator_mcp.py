@@ -18,9 +18,7 @@ def extract_json(content: str) -> str:
     # Strip markdown if present
     content = re.sub(r'```json\s*', '', content)
     content = re.sub(r'```\s*', '', content)
-    import json_repair
     try:
-        # Use json_repair or simple regex fallback
         parsed = json.loads(content)
         return json.dumps(parsed)
     except Exception:
