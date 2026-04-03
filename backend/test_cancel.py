@@ -18,7 +18,9 @@ try:
     print(f"Cancelling room: {room_id}")
 
     # Try to cancel
-    res = requests.post(f"http://127.0.0.1:8001/api/interviews/{room_id}/cancel", timeout=10)
+    res = requests.post(
+        f"http://127.0.0.1:8001/api/interviews/{room_id}/cancel", timeout=10
+    )
     print(f"Status Code: {res.status_code}")
     print(f"Response: {res.text}")
     print(f"Headers: {res.headers}")
