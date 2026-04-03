@@ -1,0 +1,181 @@
+name: Code Quality & Security Checks
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  # ===== PYTHON CHECKS =====
+  python-security:
+    name: Python Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit detect-secrets pip-audit
+
+      - name: Run Bandit (security linter)
+        run: bandit -r . -f json -o bandit-report.json || true
+
+      - name: Detect secrets
+        run: detect-secrets scan --baseline .secrets.baseline || true
+
+      - name: Pip audit (CVE check)
+        run: pip-audit
+
+  python-quality:
+    name: Python Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black ruff mypy
+
+      - name: Check formatting with Black
+        run: black --check .
+
+      - name: Lint with Ruff
+        run: ruff check .
+
+      - name: Type check with Mypy
+        run: mypy . --ignore-missing-imports || true
+
+  python-tests:
+    name: Python Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run tests
+        run: pytest --cov=. --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+
+  # ===== JAVASCRIPT/REACT CHECKS =====
+  node-security:
+    name: Node.js Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate || true
+
+      - name: Check for known vulnerabilities with Snyk
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        continue-on-error: true
+
+  node-quality:
+    name: Node.js Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint with ESLint
+        run: npm run lint
+
+      - name: Format check with Prettier
+        run: npx prettier --check .
+
+  node-tests:
+    name: Node.js Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test -- --coverage
+
+  # ===== PRE-COMMIT CHECKS =====
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - uses: pre-commit/action@v3
+
+  # ===== INTEGRATION: Block merge if checks fail =====
+  checks-passed:
+    name: All Checks Passed
+    needs: [python-security, python-quality, python-tests, node-security, node-quality, node-tests, pre-commit]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check job statuses
+        run: |
+          if [ "${{ needs.python-security.result }}" != "success" ] || \
+             [ "${{ needs.python-quality.result }}" != "success" ] || \
+             [ "${{ needs.python-tests.result }}" != "success" ] || \
+             [ "${{ needs.node-security.result }}" != "success" ] || \
+             [ "${{ needs.node-quality.result }}" != "success" ] || \
+             [ "${{ needs.node-tests.result }}" != "success" ] || \
+             [ "${{ needs.pre-commit.result }}" != "success" ]; then
+            echo "❌ Some checks failed. Fix them before merging."
+            exit 1
+          fi
+          echo "✅ All checks passed!"
