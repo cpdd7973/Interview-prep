@@ -116,8 +116,8 @@ export default function Dashboard() {
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
-        <h1>Interview Agent</h1>
-        <p>Manage and conduct automated AI interviews from a single workspace.</p>
+        <h1>Interview Prep</h1>
+        <p>Your comprehensive workspace for orchestrating AI-driven technical assessments. Effortlessly schedule interviews, monitor candidate progress in real-time, and access deep-dive analytics to streamline your hiring pipeline.</p>
       </div>
 
       {error && <div className="global-error">
@@ -127,48 +127,57 @@ export default function Dashboard() {
       <div className="dashboard-grid">
         {/* Left Side: Schedule Form */}
         <div className="schedule-card">
-          <h2>Schedule New Interview</h2>
+          <h2>Schedule Interview</h2>
           <form onSubmit={handleScheduleSubmit}>
-            <div className="form-group">
-              <label>Candidate Name</label>
-              <input name="candidate_name" className="form-input" placeholder="e.g. John Doe" value={formData.candidate_name} onChange={handleInputChange} required />
-            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>👤 Candidate Name</label>
+                <input name="candidate_name" className="form-input" placeholder="e.g. John Doe" value={formData.candidate_name} onChange={handleInputChange} required />
+              </div>
 
-            <div className="form-group">
-              <label>Candidate Email</label>
-              <input name="candidate_email" type="email" className="form-input" placeholder="john@example.com" value={formData.candidate_email} onChange={handleInputChange} required />
-            </div>
+              <div className="form-group">
+                <label>📧 Candidate Email</label>
+                <input name="candidate_email" type="email" className="form-input" placeholder="john@example.com" value={formData.candidate_email} onChange={handleInputChange} required />
+              </div>
 
-            <div className="form-group">
-              <label>Job Role</label>
-              <input name="job_role" className="form-input" placeholder="e.g. Frontend Developer" value={formData.job_role} onChange={handleInputChange} required />
-            </div>
+              <div className="form-group">
+                <label>💻 Job Role</label>
+                <input name="job_role" className="form-input" placeholder="e.g. Frontend Developer" value={formData.job_role} onChange={handleInputChange} required />
+              </div>
 
-            <div className="form-group">
-              <label>Company</label>
-              <input name="company" className="form-input" placeholder="e.g. Acme Corp" value={formData.company} onChange={handleInputChange} required />
-            </div>
+              <div className="form-group">
+                <label>🏢 Company</label>
+                <input name="company" className="form-input" placeholder="e.g. Acme Corp" value={formData.company} onChange={handleInputChange} required />
+              </div>
 
-            <div className="form-group">
-              <label>Interviewer Title</label>
-              <input name="interviewer_designation" className="form-input" placeholder="e.g. Senior Engineer" value={formData.interviewer_designation} onChange={handleInputChange} required />
-            </div>
+              <div className="form-group">
+                <label>🎓 Interviewer</label>
+                <input name="interviewer_designation" className="form-input" placeholder="e.g. Senior Engineer" value={formData.interviewer_designation} onChange={handleInputChange} required />
+              </div>
 
-            <div className="form-group">
-              <label>Date & Time (Local)</label>
-              <input
-                name="scheduled_at"
-                type="datetime-local"
-                className="form-input"
-                value={formData.scheduled_at}
-                onChange={handleInputChange}
-                min={new Date().toISOString().slice(0, 16)}
-                required
-              />
+              <div className="form-group">
+                <label>🕒 Date & Time</label>
+                <input
+                  name="scheduled_at"
+                  type="datetime-local"
+                  className="form-input"
+                  value={formData.scheduled_at}
+                  onChange={handleInputChange}
+                  min={new Date().toISOString().slice(0, 16)}
+                  required
+                />
+              </div>
             </div>
 
             <button type="submit" className="btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Scheduling...' : 'Schedule Interview'}
+              {isSubmitting ? (
+                <>
+                  <span className="spinner-small"></span>
+                  Scheduling...
+                </>
+              ) : (
+                'Confirm & Schedule'
+              )}
             </button>
           </form>
         </div>
@@ -198,11 +207,17 @@ export default function Dashboard() {
           </div>
 
           {loading ? (
-            <div className="empty-state">Loading interviews...</div>
+            <div className="empty-state">
+              <div className="spinner-small" style={{ margin: '0 auto 16px' }}></div>
+              Loading interviews...
+            </div>
           ) : filteredInterviews.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">📋</div>
+              <div className="empty-state-icon">
+                {currentTab === 'PENDING' ? '📅' : currentTab === 'ACTIVE' ? '🎙️' : '📋'}
+              </div>
               <p>No {currentTab.toLowerCase()} interviews found.</p>
+              <p style={{ fontSize: '14px', marginTop: '4px' }}>New scheduled sessions will appear here.</p>
             </div>
           ) : (
             <div className="interview-list">
