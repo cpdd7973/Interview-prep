@@ -2,6 +2,7 @@
 Interviewer Agent Node
 Conducts the conversational interview using LLMs dynamically.
 """
+
 from typing import Dict, Any
 import logging
 import json
@@ -39,86 +40,103 @@ INSTRUCTIONS:
 WARNING: Output NOTHING BUT valid JSON. No ```json markdown blocks.
 """
 
+
 def extract_json(text: str) -> dict:
     original = text
     # Strip markdown if present just in case
-    text = re.sub(r'```json\s*', '', text)
-    text = re.sub(r'```\s*', '', text)
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
     text = text.strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         logger.error(f"Failed to parse LLM JSON: {original}")
         # Fallback heuristic
-        return {"action": "next_question", "spoken_response": text, "score_of_last_answer": None}
+        return {
+            "action": "next_question",
+            "spoken_response": text,
+            "score_of_last_answer": None,
+        }
+
 
 async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
     """
     LangGraph node for conducting the interview conversation dynamically.
     """
-    logger.info(f"Dynamic AI Interviewer Agent initialized for session")
-    
+    logger.info("Dynamic AI Interviewer Agent initialized for session")
+
     if state.get("status") != "ACTIVE":
         return state
-        
+
     messages = list(state.get("messages", []))
-    
+
     # Check if candidate explicitly asked to stop in the last message
     if messages and isinstance(messages[-1], HumanMessage):
         last_human_text = messages[-1].content.lower()
-        if any(w in last_human_text for w in ["stop the interview", "i'm done", "end interview", "that's all"]):
-            messages.append(AIMessage(content="Thank you for your time today. That concludes our interview!"))
-            return {
-                "status": "COMPLETED",
-                "messages": messages
-            }
+        if any(
+            w in last_human_text
+            for w in ["stop the interview", "i'm done", "end interview", "that's all"]
+        ):
+            messages.append(
+                AIMessage(
+                    content="Thank you for your time today. That concludes our interview!"
+                )
+            )
+            return {"status": "COMPLETED", "messages": messages}
 
     # Build the Prompt
     sys_prompt = INTERVIEWER_PROMPT.format(
         company=state.get("company", "our company"),
         candidate_name=state.get("candidate_name", "the candidate"),
         job_role=state.get("job_role", "this role"),
-        interviewer_designation=state.get("interviewer_designation", "Senior Engineer")
+        interviewer_designation=state.get("interviewer_designation", "Senior Engineer"),
     )
-    
+
     # Inject system prompt at the beginning of the message history
     llm_messages = [SystemMessage(content=sys_prompt)] + messages
-    
+
     try:
         # Invoke LLM
         response_text = await llm_client.invoke_async(llm_messages)
-        
+
         # Process JSON Response
         decision = extract_json(response_text)
         action = decision.get("action", "next_question")
-        spoken_response = decision.get("spoken_response", "Could you elaborate on that?")
-        
+        spoken_response = decision.get(
+            "spoken_response", "Could you elaborate on that?"
+        )
+
         # Log real-time evaluation logic
         score = decision.get("score_of_last_answer")
         notes = decision.get("evaluation_notes")
         if score is not None:
             logger.info(f"Answer Scored: {score}/10. Notes: {notes}")
-        
+
         if action == "end_interview":
             messages.append(AIMessage(content=spoken_response))
             logger.info("LLM decided to end the interview.")
             return {
                 "status": "COMPLETED",
-                "messages": [AIMessage(content=spoken_response)] # Append the closing message
+                "messages": [
+                    AIMessage(content=spoken_response)
+                ],  # Append the closing message
             }
-            
+
         else:
             # next_question or follow_up
             logger.info(f"LLM decided action: {action}")
-            return {
-                "messages": [AIMessage(content=spoken_response)]
-            }
-        
+            return {"messages": [AIMessage(content=spoken_response)]}
+
     except Exception as e:
         import traceback
+
         logger.error(f"Interviewer agent failed: {e}")
         logger.error(traceback.format_exc())
         return {
             "error": str(e),
-            "messages": [AIMessage(content="I'm sorry, I'm having a technical issue. Could you repeat that?")]
+            "messages": [
+                AIMessage(
+                    content="I'm sorry, I'm having a technical issue. Could you repeat that?"
+                )
+            ],
         }

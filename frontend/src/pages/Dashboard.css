@@ -11,6 +11,67 @@
   margin-bottom: 32px;
 }
 
+.header-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.user-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #E2E8F0;
+}
+
+.user-avatar-fallback {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3B82F6, #6366F1);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.btn-logout {
+  padding: 8px 16px;
+  background: transparent;
+  color: #64748B;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.btn-logout:hover {
+  background: #FEF2F2;
+  color: #DC2626;
+  border-color: #FECACA;
+}
+
+
 .dashboard-header h1 {
   font-size: 32px;
   font-weight: 800;
@@ -399,6 +460,15 @@ button.tab-btn.active {
     border-radius: 10px;
     overflow: hidden;
     gap: 2px;
+  }
+
+  .user-name {
+    display: none; /* Hide name on mobile to save space */
+  }
+
+  .btn-logout {
+    padding: 6px 12px;
+    font-size: 12px;
   }
 
   .tab-btn {

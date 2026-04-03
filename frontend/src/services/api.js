@@ -4,6 +4,18 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 /**
+ * Get auth headers from localStorage token
+ */
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
+/**
  * Get room status with polling support
  */
 export const getRoomStatus = async (roomId, signal = null) => {
@@ -36,9 +48,7 @@ export const scheduleInterview = async (interviewData) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/interviews/schedule`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(interviewData),
     });
 
@@ -63,9 +73,7 @@ export const listInterviews = async (status = null) => {
       : `${API_BASE_URL}/api/interviews`;
 
     const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -86,9 +94,7 @@ export const cancelInterview = async (roomId) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/interviews/${roomId}/cancel`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
