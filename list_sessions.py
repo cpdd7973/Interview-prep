@@ -1,4 +1,5 @@
-from database import SessionLocal, InterviewSession, SessionStatus
+from database import SessionLocal, InterviewSession
+
 db = SessionLocal()
 sessions = db.query(InterviewSession).all()
 for s in sessions:

@@ -8,7 +8,7 @@ priority stack internally (SMTP/GWS/OAuth2 fallback).
 
 import logging
 from typing import Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from langchain_core.messages import SystemMessage
@@ -47,8 +47,16 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
         job_role = state["job_role"]
         scheduled_at_str = state["scheduled_at"]
 
-        # 1. Parse Datetime
-        scheduled_at = datetime.fromisoformat(scheduled_at_str.replace("Z", "+00:00"))
+        # 1. Parse Datetime (Ensure UTC aware)
+        try:
+            scheduled_at = datetime.fromisoformat(
+                scheduled_at_str.replace("Z", "+00:00")
+            )
+        except (ValueError, AttributeError):
+            scheduled_at = datetime.now(timezone.utc)
+
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
         # 2. Create Daily.co Room
         room_id = str(uuid.uuid4())

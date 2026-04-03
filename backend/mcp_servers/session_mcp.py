@@ -12,7 +12,7 @@ Tools exposed:
 """
 
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 import uuid
@@ -164,9 +164,12 @@ class SessionMCPServer:
             if not session:
                 return {"success": False, "error": "Session not found"}
 
-            # Calculate seconds remaining until scheduled time
-            now = datetime.utcnow()
-            seconds_remaining = (session.scheduled_at - now).total_seconds()
+            # Calculate seconds remaining until scheduled time (both as aware UTC)
+            now = datetime.now(timezone.utc)
+            sched_time = session.scheduled_at
+            if sched_time.tzinfo is None:
+                sched_time = sched_time.replace(tzinfo=timezone.utc)
+            seconds_remaining = (sched_time - now).total_seconds()
 
             # Fetch transcript chunks for this session
             chunks = (
@@ -254,10 +257,10 @@ class SessionMCPServer:
 
             old_status = session.status
             session.status = status
-            session.updated_at = datetime.utcnow()
+            session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
             # Update timestamps based on status
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             if status == SessionStatus.ACTIVE:
                 if not session.activated_at:
                     session.activated_at = now

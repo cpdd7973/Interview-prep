@@ -55,15 +55,16 @@ export default function Dashboard() {
     setIsSubmitting(true);
     setError(null);
     try {
-      // Create UTC iso string from local datetime-local input
+      // dateObj will correctly represent the LOCAL datetime selected
       const dateObj = new Date(formData.scheduled_at);
 
-      if (dateObj.getTime() < Date.now()) {
+      if (dateObj.getTime() < Date.now() - 60000) { // Allow 1m grace
         setError("Cannot schedule an interview in the past.");
         setIsSubmitting(false);
         return;
       }
 
+      // Ensure we send it as a strict UTC ISO string ending in Z
       const payload = { ...formData, scheduled_at: dateObj.toISOString() };
 
       const res = await scheduleInterview(payload);
@@ -178,7 +179,7 @@ export default function Dashboard() {
                   className="form-input"
                   value={formData.scheduled_at}
                   onChange={handleInputChange}
-                  min={new Date().toISOString().slice(0, 16)}
+                  min={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                   required
                 />
               </div>
@@ -316,14 +317,23 @@ function InterviewCard({ interview, currentTab, handleCancel, isConfirming }) {
     UIStatus = <span className="status-badge completed">✅ Report Ready</span>;
   }
 
+  // Ensure ISO string is treated as UTC (append Z if missing)
+  const isoStr = interview.scheduled_at?.endsWith('Z') || interview.scheduled_at?.includes('+')
+    ? interview.scheduled_at
+    : `${interview.scheduled_at}Z`;
+
+  const scheduledDate = new Date(isoStr);
+  const cardScheduledTime = scheduledDate.getTime();
+  const isUpcoming = cardScheduledTime > now;
+
   return (
-    <div className={`interview-card ${!interactive ? 'opacity-70' : ''}`}>
+    <div className={`interview-card ${isUpcoming ? 'upcoming' : ''}`}>
       <div className="interview-info">
-        <h3>{interview.candidate_name} <span style={{ fontWeight: 400, color: '#64748B' }}>for</span> {interview.job_role}</h3>
-        <div className="interview-meta" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-          <span>{new Date(interview.scheduled_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(interview.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          <span className="meta-dot"></span>
-          {UIStatus}
+        <h3>{interview.candidate_name} <span className="role-text">for {interview.job_role}</span></h3>
+        <div className="interview-meta">
+          <span>{scheduledDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at {scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          {interview.status === 'EXPIRED' && <span className="badge expired">EXPIRED</span>}
+          {interview.status === 'PENDING' && !isUpcoming && <span className="badge starting">STARTING NOW</span>}
         </div>
       </div>
       <div className="card-actions">

@@ -18,7 +18,7 @@ import asyncio
 import json
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 # LIGHTWEIGHT imports only — heavy deps load inside interview_websocket()
 from config import settings
@@ -180,7 +180,7 @@ async def schedule_interview(interview_data: dict, user=Depends(get_current_user
             ),
             "status": "PENDING",
             "scheduled_at": interview_data.get(
-                "scheduled_at", datetime.utcnow().isoformat()
+                "scheduled_at", datetime.now(timezone.utc).isoformat()
             ),
             "daily_room_url": "",
             "messages": [],
@@ -509,17 +509,22 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
 
     chat_state: InterviewState = {
         "room_id": room_id,
-        "candidate_email": "",
+        "candidate_email": session.candidate.email,
         "candidate_name": candidate_name,
         "job_role": job_role,
         "company": company,
         "interviewer_designation": interviewer_designation,
-        "scheduled_at": "",
+        "scheduled_at": (
+            session.scheduled_at.isoformat() if session.scheduled_at else ""
+        ),
         "status": "ACTIVE",
+        "daily_room_url": session.daily_room_url or "",
         "messages": existing_messages,
         "questions_asked": questions_asked,
         "questions_state": questions_state,
         "current_question_id": current_q_id,
+        "evaluation": None,
+        "error": None,
     }
 
     try:

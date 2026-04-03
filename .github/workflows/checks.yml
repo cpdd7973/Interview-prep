@@ -169,7 +169,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - uses: pre-commit/action@v3
+      - uses: pre-commit/action@v3.0.1
 
   # ===== INTEGRATION: Block merge if checks fail =====
   checks-passed:

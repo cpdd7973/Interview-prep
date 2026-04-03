@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 from config import settings
 
@@ -70,8 +70,12 @@ class User(Base):
     email = Column(String(255), nullable=False, unique=True, index=True)
     name = Column(String(255), nullable=False)
     picture = Column(String(500), nullable=True)  # Google avatar URL
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     # Relationships
     sessions = relationship(
@@ -89,8 +93,12 @@ class Candidate(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     name = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     # Relationships
     sessions = relationship(
@@ -113,8 +121,12 @@ class InterviewSession(Base):
     scheduled_at = Column(DateTime, nullable=False, index=True)
     status = Column(SQLEnum(SessionStatus), default=SessionStatus.PENDING, index=True)
     daily_room_url = Column(String(500), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
     activated_at = Column(DateTime, nullable=True)
     joined_at = Column(DateTime, nullable=True)
     disconnected_at = Column(DateTime, nullable=True)
@@ -170,8 +182,12 @@ class Question(Base):
     question_text = Column(Text, nullable=False)
     ideal_answer = Column(Text, nullable=True)  # For evaluation reference
     tags = Column(JSON, default=list)  # Array of strings
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class Evaluation(Base):
