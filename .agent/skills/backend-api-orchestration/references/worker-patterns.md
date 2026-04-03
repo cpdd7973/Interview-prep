@@ -508,7 +508,7 @@ settings = Settings()
 # .env.example — commit this, not .env
 ENVIRONMENT=production
 SECRET_KEY=          # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost/interview_db
+DATABASE_URL=postgresql+asyncpg://<DB_USER>:<DB_PASSWORD>@localhost/interview_db
 REDIS_URL=redis://localhost:6379/0
 ANTHROPIC_API_KEY=   # From https://console.anthropic.com
 LLM_MODEL=claude-sonnet-4-6
