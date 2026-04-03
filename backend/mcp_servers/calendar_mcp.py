@@ -6,14 +6,16 @@ Designed by Vera + Dmitri:
 - GWS CLI as primary (one-time 'gws auth login', no refresh_token needed)
 - OAuth2 as legacy fallback (requires manual credential setup)
 """
+
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from config import settings
 
 logger = logging.getLogger(__name__)
+
 
 # Tool Input Schemas
 class CreateEventInput(BaseModel):
@@ -23,12 +25,15 @@ class CreateEventInput(BaseModel):
     attendees: List[str] = Field(..., description="List of attendee emails")
     description: Optional[str] = Field(None, description="Event description")
 
+
 class FindFreeSlotsInput(BaseModel):
     date_str: str = Field(..., description="Date to check in YYYY-MM-DD format")
     duration_minutes: int = Field(60, description="Duration needed in minutes")
 
+
 class CancelEventInput(BaseModel):
     event_id: str = Field(..., description="Google Calendar event ID")
+
 
 class RescheduleEventInput(BaseModel):
     event_id: str = Field(..., description="Google Calendar event ID")
@@ -42,6 +47,7 @@ class CalendarMCPServer:
     1. GWS CLI (primary — simple 'gws auth login')
     2. Google OAuth2 API (fallback — manual refresh_token)
     """
+
     def __init__(self):
         self.name = "calendar-mcp-server"
         self.version = "2.0.0"  # v2: GWS primary + OAuth2 fallback
@@ -50,12 +56,12 @@ class CalendarMCPServer:
             "create_event": self.create_event,
             "find_free_slots": self.find_free_slots,
             "cancel_event": self.cancel_event,
-            "reschedule_event": self.reschedule_event
+            "reschedule_event": self.reschedule_event,
         }
 
     def _has_oauth2_credentials(self) -> bool:
         return bool(
-            getattr(settings, 'google_refresh_token', '')
+            getattr(settings, "google_refresh_token", "")
             and settings.google_refresh_token != "your_refresh_token"
         )
 
@@ -74,13 +80,17 @@ class CalendarMCPServer:
         if self._has_oauth2_credentials():
             logger.info("⚠️ GWS failed, trying OAuth2 for calendar event...")
             return self._create_event_oauth2(input_data)
-        
-        return {"success": False, "error": "No calendar method available. Run 'gws auth login' or set OAuth2 credentials."}
+
+        return {
+            "success": False,
+            "error": "No calendar method available. Run 'gws auth login' or set OAuth2 credentials.",
+        }
 
     def _create_event_gws(self, input_data: CreateEventInput) -> Dict[str, Any]:
         """Create event via GWS CLI."""
         try:
             from utils.gws_bridge import gws_create_event, gws_available
+
             if not gws_available():
                 return {"success": False, "error": "GWS CLI not available"}
 
@@ -89,7 +99,7 @@ class CalendarMCPServer:
                 start_time=input_data.start_time.isoformat() + "Z",
                 end_time=input_data.end_time.isoformat() + "Z",
                 attendees=input_data.attendees,
-                description=input_data.description
+                description=input_data.description,
             )
 
             if result["success"]:
@@ -98,7 +108,7 @@ class CalendarMCPServer:
                     "method": "gws",
                     "event_id": result.get("event_id", ""),
                     "event_link": result.get("event_link", ""),
-                    "message": "Event created via GWS CLI"
+                    "message": "Event created via GWS CLI",
                 }
             return result
         except Exception as e:
@@ -111,30 +121,38 @@ class CalendarMCPServer:
             service = self._get_calendar_service()
 
             event = {
-                'summary': input_data.summary,
-                'description': input_data.description,
-                'start': {'dateTime': input_data.start_time.isoformat() + 'Z', 'timeZone': 'UTC'},
-                'end': {'dateTime': input_data.end_time.isoformat() + 'Z', 'timeZone': 'UTC'},
-                'attendees': [{'email': email} for email in input_data.attendees],
-                'reminders': {
-                    'useDefault': False,
-                    'overrides': [
-                        {'method': 'email', 'minutes': 24 * 60},
-                        {'method': 'popup', 'minutes': 10},
+                "summary": input_data.summary,
+                "description": input_data.description,
+                "start": {
+                    "dateTime": input_data.start_time.isoformat() + "Z",
+                    "timeZone": "UTC",
+                },
+                "end": {
+                    "dateTime": input_data.end_time.isoformat() + "Z",
+                    "timeZone": "UTC",
+                },
+                "attendees": [{"email": email} for email in input_data.attendees],
+                "reminders": {
+                    "useDefault": False,
+                    "overrides": [
+                        {"method": "email", "minutes": 24 * 60},
+                        {"method": "popup", "minutes": 10},
                     ],
                 },
             }
 
-            created_event = service.events().insert(
-                calendarId='primary', body=event, sendUpdates='all'
-            ).execute()
+            created_event = (
+                service.events()
+                .insert(calendarId="primary", body=event, sendUpdates="all")
+                .execute()
+            )
 
             return {
                 "success": True,
                 "method": "oauth2",
-                "event_id": created_event.get('id'),
-                "event_link": created_event.get('htmlLink'),
-                "message": "Event created via OAuth2"
+                "event_id": created_event.get("id"),
+                "event_link": created_event.get("htmlLink"),
+                "message": "Event created via OAuth2",
             }
         except Exception as e:
             logger.error(f"❌ OAuth2 calendar create failed: {e}")
@@ -161,6 +179,7 @@ class CalendarMCPServer:
         """Find busy slots via GWS CLI events list."""
         try:
             from utils.gws_bridge import gws_list_events, gws_available
+
             if not gws_available():
                 return {"success": False, "error": "GWS CLI not available"}
 
@@ -178,7 +197,7 @@ class CalendarMCPServer:
                     "method": "gws",
                     "date": input_data.date_str,
                     "busyslots": busy_slots,
-                    "duration_needed": input_data.duration_minutes
+                    "duration_needed": input_data.duration_minutes,
                 }
             return result
         except Exception as e:
@@ -196,18 +215,18 @@ class CalendarMCPServer:
                 "timeMin": time_min,
                 "timeMax": time_max,
                 "timeZone": "UTC",
-                "items": [{"id": 'primary'}]
+                "items": [{"id": "primary"}],
             }
 
             freebusy_req = service.freebusy().query(body=body).execute()
-            busy_slots = freebusy_req['calendars']['primary']['busy']
+            busy_slots = freebusy_req["calendars"]["primary"]["busy"]
 
             return {
                 "success": True,
                 "method": "oauth2",
                 "date": input_data.date_str,
                 "busyslots": busy_slots,
-                "duration_needed": input_data.duration_minutes
+                "duration_needed": input_data.duration_minutes,
             }
         except Exception as e:
             logger.error(f"❌ OAuth2 freebusy failed: {e}")
@@ -231,11 +250,17 @@ class CalendarMCPServer:
     def _cancel_event_gws(self, input_data: CancelEventInput) -> Dict[str, Any]:
         try:
             from utils.gws_bridge import gws_cancel_event, gws_available
+
             if not gws_available():
                 return {"success": False, "error": "GWS CLI not available"}
             result = gws_cancel_event(event_id=input_data.event_id)
             if result["success"]:
-                return {"success": True, "method": "gws", "event_id": input_data.event_id, "message": "Event cancelled via GWS"}
+                return {
+                    "success": True,
+                    "method": "gws",
+                    "event_id": input_data.event_id,
+                    "message": "Event cancelled via GWS",
+                }
             return result
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -244,9 +269,14 @@ class CalendarMCPServer:
         try:
             service = self._get_calendar_service()
             service.events().delete(
-                calendarId='primary', eventId=input_data.event_id, sendUpdates='all'
+                calendarId="primary", eventId=input_data.event_id, sendUpdates="all"
             ).execute()
-            return {"success": True, "method": "oauth2", "event_id": input_data.event_id, "message": "Event cancelled via OAuth2"}
+            return {
+                "success": True,
+                "method": "oauth2",
+                "event_id": input_data.event_id,
+                "message": "Event cancelled via OAuth2",
+            }
         except Exception as e:
             logger.error(f"❌ OAuth2 cancel failed: {e}")
             return {"success": False, "error": str(e)}
@@ -269,31 +299,55 @@ class CalendarMCPServer:
     def _reschedule_event_gws(self, input_data: RescheduleEventInput) -> Dict[str, Any]:
         try:
             from utils.gws_bridge import gws_reschedule_event, gws_available
+
             if not gws_available():
                 return {"success": False, "error": "GWS CLI not available"}
             result = gws_reschedule_event(
                 event_id=input_data.event_id,
                 new_start_time=input_data.new_start_time.isoformat() + "Z",
-                new_end_time=input_data.new_end_time.isoformat() + "Z"
+                new_end_time=input_data.new_end_time.isoformat() + "Z",
             )
             if result["success"]:
-                return {"success": True, "method": "gws", "event_id": input_data.event_id, "message": "Event rescheduled via GWS"}
+                return {
+                    "success": True,
+                    "method": "gws",
+                    "event_id": input_data.event_id,
+                    "message": "Event rescheduled via GWS",
+                }
             return result
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _reschedule_event_oauth2(self, input_data: RescheduleEventInput) -> Dict[str, Any]:
+    def _reschedule_event_oauth2(
+        self, input_data: RescheduleEventInput
+    ) -> Dict[str, Any]:
         try:
             service = self._get_calendar_service()
-            event = service.events().get(calendarId='primary', eventId=input_data.event_id).execute()
-            event['start']['dateTime'] = input_data.new_start_time.isoformat() + 'Z'
-            event['end']['dateTime'] = input_data.new_end_time.isoformat() + 'Z'
+            event = (
+                service.events()
+                .get(calendarId="primary", eventId=input_data.event_id)
+                .execute()
+            )
+            event["start"]["dateTime"] = input_data.new_start_time.isoformat() + "Z"
+            event["end"]["dateTime"] = input_data.new_end_time.isoformat() + "Z"
 
-            updated_event = service.events().update(
-                calendarId='primary', eventId=input_data.event_id, body=event, sendUpdates='all'
-            ).execute()
+            updated_event = (
+                service.events()
+                .update(
+                    calendarId="primary",
+                    eventId=input_data.event_id,
+                    body=event,
+                    sendUpdates="all",
+                )
+                .execute()
+            )
 
-            return {"success": True, "method": "oauth2", "event_id": updated_event['id'], "message": "Event rescheduled via OAuth2"}
+            return {
+                "success": True,
+                "method": "oauth2",
+                "event_id": updated_event["id"],
+                "message": "Event rescheduled via OAuth2",
+            }
         except Exception as e:
             logger.error(f"❌ OAuth2 reschedule failed: {e}")
             return {"success": False, "error": str(e)}
@@ -306,6 +360,7 @@ class CalendarMCPServer:
         """Build Google Calendar service via OAuth2."""
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
+
         creds = Credentials(
             token=None,
             refresh_token=settings.google_refresh_token,

@@ -2,11 +2,12 @@
 Authentication module — Google OAuth + JWT sessions.
 Lightweight: no new dependencies beyond what's already in requirements.txt.
 """
+
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from pydantic import BaseModel
@@ -161,7 +162,9 @@ async def google_auth(body: GoogleAuthRequest):
             )
 
         if userinfo_resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Failed to fetch Google user info")
+            raise HTTPException(
+                status_code=401, detail="Failed to fetch Google user info"
+            )
 
         userinfo = userinfo_resp.json()
         email = userinfo.get("email")

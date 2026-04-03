@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@jitsi/react-sdk": "^1.4.4",
+    "globals": "^17.4.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0"

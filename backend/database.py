@@ -2,9 +2,18 @@
 SQLite database schema and connection management.
 All tables designed for low-memory footprint and fast queries.
 """
+
 from sqlalchemy import (
-    create_engine, Column, String, Integer, Float, DateTime, 
-    Text, JSON, ForeignKey, Enum as SQLEnum
+    create_engine,
+    Column,
+    String,
+    Integer,
+    Float,
+    DateTime,
+    Text,
+    JSON,
+    ForeignKey,
+    Enum as SQLEnum,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -17,7 +26,7 @@ engine = create_engine(
     settings.database_url,
     connect_args={"check_same_thread": False},  # Needed for SQLite
     pool_pre_ping=True,
-    echo=settings.log_level == "DEBUG"
+    echo=settings.log_level == "DEBUG",
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -54,6 +63,7 @@ class Speaker(str, enum.Enum):
 # Models
 class User(Base):
     """Authenticated users (recruiters/admins) who can schedule interviews."""
+
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -64,29 +74,39 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    sessions = relationship("InterviewSession", back_populates="creator", foreign_keys="InterviewSession.created_by")
+    sessions = relationship(
+        "InterviewSession",
+        back_populates="creator",
+        foreign_keys="InterviewSession.created_by",
+    )
 
 
 class Candidate(Base):
     """Stores candidate PII separately for GDPR compliance."""
+
     __tablename__ = "candidates"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
-    sessions = relationship("InterviewSession", back_populates="candidate", cascade="all, delete-orphan")
+    sessions = relationship(
+        "InterviewSession", back_populates="candidate", cascade="all, delete-orphan"
+    )
 
 
 class InterviewSession(Base):
     """Represents a scheduled or active interview session."""
+
     __tablename__ = "interview_sessions"
-    
+
     room_id = Column(String(36), primary_key=True)  # UUID
-    candidate_id = Column(Integer, ForeignKey("candidates.id"), nullable=False, index=True)
+    candidate_id = Column(
+        Integer, ForeignKey("candidates.id"), nullable=False, index=True
+    )
     job_role = Column(String(100), nullable=False, index=True)
     company = Column(String(255), nullable=False)
     interviewer_designation = Column(String(255), nullable=False)
@@ -103,25 +123,35 @@ class InterviewSession(Base):
     report_generated_at = Column(DateTime, nullable=True)
     report_retry_count = Column(Integer, default=0)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    
+
     # Relationships
     candidate = relationship("Candidate", back_populates="sessions")
     creator = relationship("User", back_populates="sessions", foreign_keys=[created_by])
-    transcript_chunks = relationship("TranscriptChunk", back_populates="session", cascade="all, delete-orphan")
-    evaluation = relationship("Evaluation", back_populates="session", uselist=False, cascade="all, delete-orphan")
+    transcript_chunks = relationship(
+        "TranscriptChunk", back_populates="session", cascade="all, delete-orphan"
+    )
+    evaluation = relationship(
+        "Evaluation",
+        back_populates="session",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class TranscriptChunk(Base):
     """Stores conversation transcript in chunks."""
+
     __tablename__ = "transcript_chunks"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    room_id = Column(String(36), ForeignKey("interview_sessions.room_id"), nullable=False, index=True)
+    room_id = Column(
+        String(36), ForeignKey("interview_sessions.room_id"), nullable=False, index=True
+    )
     speaker = Column(SQLEnum(Speaker), nullable=False)
     content = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=True)
-    
+
     # Relationships
     session = relationship("InterviewSession", back_populates="transcript_chunks")
     question = relationship("Question")
@@ -129,8 +159,9 @@ class TranscriptChunk(Base):
 
 class Question(Base):
     """Question bank for different roles and topics."""
+
     __tablename__ = "questions"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     role = Column(String(100), nullable=False, index=True)
     topic = Column(String(255), nullable=False, index=True)
@@ -145,10 +176,17 @@ class Question(Base):
 
 class Evaluation(Base):
     """Stores evaluation scores and feedback for completed interviews."""
+
     __tablename__ = "evaluations"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    room_id = Column(String(36), ForeignKey("interview_sessions.room_id"), nullable=False, unique=True, index=True)
+    room_id = Column(
+        String(36),
+        ForeignKey("interview_sessions.room_id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
     technical_score = Column(Float, nullable=False)  # 0-10
     communication_score = Column(Float, nullable=False)  # 0-10
     problem_solving_score = Column(Float, nullable=False)  # 0-10
@@ -159,7 +197,7 @@ class Evaluation(Base):
     report_path = Column(String(500), nullable=True)  # Path to generated PDF
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     session = relationship("InterviewSession", back_populates="evaluation")
 

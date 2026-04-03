@@ -3,6 +3,7 @@ Auth migration script — idempotent, safe to run multiple times.
 Creates the 'users' table and adds 'created_by' to 'interview_sessions'.
 Backfills existing sessions under a default admin user.
 """
+
 import sqlite3
 import os
 import sys
@@ -11,10 +12,10 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from config import settings
+from config import settings  # noqa: E402
 
 DB_PATH = os.path.abspath(settings.database_path)
-ADMIN_EMAIL = settings.admin_email or "admin@interviewprep.local"
+ADMIN_EMAIL = settings.admin_email or "admin@interviewprep.local"  # nosec
 
 
 def migrate():
@@ -39,7 +40,9 @@ def migrate():
     columns = [col[1] for col in cursor.fetchall()]
 
     if "created_by" not in columns:
-        cursor.execute("ALTER TABLE interview_sessions ADD COLUMN created_by INTEGER REFERENCES users(id)")
+        cursor.execute(
+            "ALTER TABLE interview_sessions ADD COLUMN created_by INTEGER REFERENCES users(id)"
+        )
         print("✅ 'created_by' column added to interview_sessions.")
     else:
         print("ℹ️  'created_by' column already exists.")
@@ -56,8 +59,7 @@ def migrate():
 
     if not admin:
         cursor.execute(
-            "INSERT INTO users (email, name) VALUES (?, ?)",
-            (ADMIN_EMAIL, "Admin")
+            "INSERT INTO users (email, name) VALUES (?, ?)", (ADMIN_EMAIL, "Admin")
         )
         admin_id = cursor.lastrowid
         print(f"✅ Default admin user created: {ADMIN_EMAIL} (id={admin_id})")
@@ -68,7 +70,7 @@ def migrate():
     # Backfill sessions with NULL created_by
     cursor.execute(
         "UPDATE interview_sessions SET created_by = ? WHERE created_by IS NULL",
-        (admin_id,)
+        (admin_id,),
     )
     backfilled = cursor.rowcount
     if backfilled > 0:

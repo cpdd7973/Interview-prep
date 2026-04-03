@@ -6,7 +6,6 @@ dist/
 build/
 *.egg
 .env
-.secrets.baseline
 
 # Node
 node_modules/

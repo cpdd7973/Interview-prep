@@ -13,6 +13,7 @@ GWS CLI command reference:
   Events:   gws calendar events list --params '{"calendarId":"primary",...}'
   Inbox:    gws gmail +triage
 """
+
 import subprocess
 import json
 import logging
@@ -38,8 +39,8 @@ def _get_gws_path() -> Optional[str]:
     if _gws_path is not None:
         return _gws_path if _gws_path != "" else None
 
-    custom = getattr(settings, 'gws_cli_path', 'gws')
-    path = shutil.which(custom) or shutil.which('gws')
+    custom = getattr(settings, "gws_cli_path", "gws")
+    path = shutil.which(custom) or shutil.which("gws")
     _gws_path = path or ""
     if path:
         logger.info(f"✅ GWS CLI found at: {path}")
@@ -54,36 +55,39 @@ _gws_auth_verified: Optional[bool] = None
 def gws_available() -> bool:
     """Check if gws CLI is installed AND authenticated. Caches result."""
     global _gws_auth_verified
-    
+
     # If we already know auth failed, skip the slow subprocess call
     if _gws_auth_verified is False:
         return False
     if _gws_auth_verified is True:
         return True
-    
+
     path = _get_gws_path()
     if not path:
         _gws_auth_verified = False
         return False
     try:
         result = subprocess.run(
-            [path, "--version"],
-            capture_output=True, text=True, timeout=5
-        )
+            [path, "--version"], capture_output=True, text=True, timeout=5
+        )  # nosec B603
         if result.returncode != 0:
             _gws_auth_verified = False
             return False
-        
+
         # Quick auth test — if this fails, we cache it to avoid future 5s waits
         auth_test = subprocess.run(
             [path, "gmail", "+triage", "--format", "json"],
-            capture_output=True, text=True, timeout=5
-        )
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )  # nosec B603
         if "Access denied" in (auth_test.stderr or "") or auth_test.returncode != 0:
-            logger.info("⚠️ GWS CLI installed but NOT authenticated. Skipping GWS calls.")
+            logger.info(
+                "⚠️ GWS CLI installed but NOT authenticated. Skipping GWS calls."
+            )
             _gws_auth_verified = False
             return False
-        
+
         _gws_auth_verified = True
         return True
     except Exception:
@@ -94,7 +98,7 @@ def gws_available() -> bool:
 def _run_gws(args: List[str], timeout: int = 15) -> Dict[str, Any]:
     """
     Execute a gws CLI command and return parsed JSON output.
-    
+
     Dmitri's pattern: every external call gets a timeout budget.
     Nadia's rule: never log output that may contain email body content.
     """
@@ -107,21 +111,23 @@ def _run_gws(args: List[str], timeout: int = 15) -> Dict[str, Any]:
     try:
         logger.debug(f"🔧 GWS: {' '.join(args[:3])}...")  # Log command, not data
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8"
-        )
+            cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8"
+        )  # nosec B603
 
         if result.returncode != 0:
-            error_output = result.stderr.strip() if result.stderr else result.stdout.strip()
+            error_output = (
+                result.stderr.strip() if result.stderr else result.stdout.strip()
+            )
             # Try to parse JSON error
             try:
                 err_data = json.loads(error_output)
                 error_msg = err_data.get("error", {}).get("message", error_output[:200])
             except (json.JSONDecodeError, TypeError):
-                error_msg = error_output[:200] if error_output else f"Exit code {result.returncode}"
+                error_msg = (
+                    error_output[:200]
+                    if error_output
+                    else f"Exit code {result.returncode}"
+                )
             logger.warning(f"⚠️ GWS command failed: {error_msg[:200]}")
             return {"success": False, "error": error_msg, "method": "gws"}
 
@@ -139,7 +145,11 @@ def _run_gws(args: List[str], timeout: int = 15) -> Dict[str, Any]:
 
     except subprocess.TimeoutExpired:
         logger.error(f"❌ GWS command timed out after {timeout}s")
-        return {"success": False, "error": f"GWS timed out after {timeout}s", "method": "gws"}
+        return {
+            "success": False,
+            "error": f"GWS timed out after {timeout}s",
+            "method": "gws",
+        }
     except FileNotFoundError:
         logger.error("❌ GWS CLI binary not found at runtime")
         return {"success": False, "error": "GWS CLI not found", "method": "gws"}
@@ -152,28 +162,34 @@ def _run_gws(args: List[str], timeout: int = 15) -> Dict[str, Any]:
 # GMAIL OPERATIONS
 # ══════════════════════════════════════════════════════════════════
 
+
 def gws_send_email(
     to_email: str,
     subject: str,
     body: str,
     is_html: bool = True,
-    attachment_path: Optional[str] = None
+    attachment_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Send email via gws CLI.
-    
+
     For plain text: uses 'gws gmail +send' helper (simple).
-    For HTML/attachments: builds raw RFC 2822 message and uses 
+    For HTML/attachments: builds raw RFC 2822 message and uses
     'gws gmail users messages send --json' with base64 encoded raw message.
     """
     if not is_html and not attachment_path:
         # Simple plain text — use the +send helper
         args = [
-            "gmail", "+send",
-            "--to", to_email,
-            "--subject", subject,
-            "--body", body,
-            "--format", "json",
+            "gmail",
+            "+send",
+            "--to",
+            to_email,
+            "--subject",
+            subject,
+            "--body",
+            body,
+            "--format",
+            "json",
         ]
         result = _run_gws(args, timeout=15)
     else:
@@ -181,25 +197,33 @@ def gws_send_email(
         msg = MIMEMultipart()
         msg["To"] = to_email
         msg["Subject"] = subject
-        
+
         content_type = "html" if is_html else "plain"
         msg.attach(MIMEText(body, content_type))
-        
+
         if attachment_path and os.path.exists(attachment_path):
             with open(attachment_path, "rb") as f:
                 attachment = MIMEApplication(f.read(), _subtype="pdf")
                 filename = os.path.basename(attachment_path)
-                attachment.add_header("Content-Disposition", "attachment", filename=filename)
+                attachment.add_header(
+                    "Content-Disposition", "attachment", filename=filename
+                )
                 msg.attach(attachment)
-        
+
         raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        
+
         json_body = json.dumps({"raw": raw_message})
         args = [
-            "gmail", "users", "messages", "send",
-            "--params", json.dumps({"userId": "me"}),
-            "--json", json_body,
-            "--format", "json",
+            "gmail",
+            "users",
+            "messages",
+            "send",
+            "--params",
+            json.dumps({"userId": "me"}),
+            "--json",
+            json_body,
+            "--format",
+            "json",
         ]
         result = _run_gws(args, timeout=15)
 
@@ -208,10 +232,7 @@ def gws_send_email(
     return result
 
 
-def gws_read_inbox(
-    query: str = "",
-    max_results: int = 10
-) -> Dict[str, Any]:
+def gws_read_inbox(query: str = "", max_results: int = 10) -> Dict[str, Any]:
     """Read inbox using gws gmail +triage helper or raw API."""
     # Use the +triage helper for simple inbox overview
     args = ["gmail", "+triage", "--format", "json"]
@@ -222,20 +243,26 @@ def gws_read_inbox(
 # CALENDAR OPERATIONS
 # ══════════════════════════════════════════════════════════════════
 
+
 def gws_create_event(
     summary: str,
     start_time: str,
     end_time: str,
     attendees: Optional[List[str]] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a calendar event via gws calendar +insert helper."""
     args = [
-        "calendar", "+insert",
-        "--summary", summary,
-        "--start", start_time,
-        "--end", end_time,
-        "--format", "json",
+        "calendar",
+        "+insert",
+        "--summary",
+        summary,
+        "--start",
+        start_time,
+        "--end",
+        end_time,
+        "--format",
+        "json",
     ]
 
     if attendees:
@@ -255,10 +282,7 @@ def gws_create_event(
     return result
 
 
-def gws_list_events(
-    date_str: str,
-    max_results: int = 20
-) -> Dict[str, Any]:
+def gws_list_events(date_str: str, max_results: int = 20) -> Dict[str, Any]:
     """List calendar events using gws calendar +agenda helper or raw API."""
     # Use raw API for date-based filtering
     time_min = f"{date_str}T00:00:00Z"
@@ -274,9 +298,13 @@ def gws_list_events(
     }
 
     args = [
-        "calendar", "events", "list",
-        "--params", json.dumps(params),
-        "--format", "json",
+        "calendar",
+        "events",
+        "list",
+        "--params",
+        json.dumps(params),
+        "--format",
+        "json",
     ]
 
     return _run_gws(args, timeout=10)
@@ -289,11 +317,15 @@ def gws_cancel_event(event_id: str) -> Dict[str, Any]:
         "eventId": event_id,
         "sendUpdates": "all",
     }
-    
+
     args = [
-        "calendar", "events", "delete",
-        "--params", json.dumps(params),
-        "--format", "json",
+        "calendar",
+        "events",
+        "delete",
+        "--params",
+        json.dumps(params),
+        "--format",
+        "json",
     ]
 
     result = _run_gws(args, timeout=10)
@@ -304,9 +336,7 @@ def gws_cancel_event(event_id: str) -> Dict[str, Any]:
 
 
 def gws_reschedule_event(
-    event_id: str,
-    new_start_time: str,
-    new_end_time: str
+    event_id: str, new_start_time: str, new_end_time: str
 ) -> Dict[str, Any]:
     """Reschedule an event via gws calendar events patch."""
     params = {
@@ -321,10 +351,15 @@ def gws_reschedule_event(
     }
 
     args = [
-        "calendar", "events", "patch",
-        "--params", json.dumps(params),
-        "--json", json.dumps(body),
-        "--format", "json",
+        "calendar",
+        "events",
+        "patch",
+        "--params",
+        json.dumps(params),
+        "--json",
+        json.dumps(body),
+        "--format",
+        "json",
     ]
 
     result = _run_gws(args, timeout=10)

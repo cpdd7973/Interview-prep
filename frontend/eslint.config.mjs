@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import security from "eslint-plugin-security";
+import globals from "globals";
 
 export default [
   {
@@ -9,6 +10,12 @@ export default [
   security.configs.recommended,
   {
     plugins: { security },
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
     rules: {
       "no-console": "warn",
       "security/detect-non-literal-regexp": "warn",
