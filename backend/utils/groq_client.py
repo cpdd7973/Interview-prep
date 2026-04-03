@@ -32,7 +32,7 @@ async def _init_gemini_client():
     if not GEMINI_AVAILABLE or not settings.gemini_api_key:
         return None
     return ChatGoogleGenerativeAI(
-        google_api_key=settings.gemini_api_key, model="gemini-pro", temperature=0.7
+        google_api_key=settings.gemini_api_key, model="gemini-1.5-flash", temperature=0.7
     )
 
 
@@ -116,8 +116,12 @@ class LLMClient:
         """
         Async approach specifically meant to handle the fallback delay safely.
         """
+        self._ensure_initialized()
 
         try:
+            if not self.primary_llm:
+                raise RuntimeError("Primary LLM is None. Skipping to fallback.")
+
             # We use the sync invoke since groq is fast enough, or run in executor
             response = await asyncio.to_thread(
                 self.primary_llm.invoke, messages, **kwargs
@@ -147,6 +151,7 @@ class LLMClient:
         Synchronous proxy for compatibility where `invoke` is used directly.
         (If you use fallback here, it will attempt a synchronous loop which might require event loop handling)
         """
+        self._ensure_initialized()
         llm = self.primary_llm
         if not llm:
             raise RuntimeError(

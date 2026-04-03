@@ -467,9 +467,12 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
             return None
         data = {
             "candidate_name": session.candidate.name,
+            "candidate_email": session.candidate.email,
             "job_role": session.job_role,
             "company": session.company,
             "interviewer_designation": session.interviewer_designation,
+            "scheduled_at_iso": session.scheduled_at.isoformat() if session.scheduled_at else "",
+            "daily_room_url": session.daily_room_url or "",
         }
         db.close()
         return data
@@ -509,16 +512,14 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
 
     chat_state: InterviewState = {
         "room_id": room_id,
-        "candidate_email": session.candidate.email,
+        "candidate_email": session_data["candidate_email"],
         "candidate_name": candidate_name,
         "job_role": job_role,
         "company": company,
         "interviewer_designation": interviewer_designation,
-        "scheduled_at": (
-            session.scheduled_at.isoformat() if session.scheduled_at else ""
-        ),
+        "scheduled_at": session_data["scheduled_at_iso"],
         "status": "ACTIVE",
-        "daily_room_url": session.daily_room_url or "",
+        "daily_room_url": session_data["daily_room_url"],
         "messages": existing_messages,
         "questions_asked": questions_asked,
         "questions_state": questions_state,
@@ -677,8 +678,6 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
 
     try:
         # Loop for continuous conversation
-        audio_buffer = []
-        MAX_BUFFER_CHUNKS = 4  # ~8 seconds of audio before forced transcription
 
         # Deduplication state for room
         last_chunk_size = 0
@@ -993,7 +992,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         logger.error(f"WebSocket critical error: {e}")
         try:
             await websocket.close(code=1011)
-        except:
+        except Exception:
             pass
         await asyncio.to_thread(
             session_mcp.update_status,

@@ -130,6 +130,11 @@ def state_machine_sweeper():
     try:
         now = datetime.now(timezone.utc)
 
+        def _ensure_tz(dt):
+            if dt and dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt
+
         # 1. Process PENDING -> EXPIRED
         pending_sessions = (
             db.query(InterviewSession)
@@ -138,10 +143,10 @@ def state_machine_sweeper():
         )
 
         for session in pending_sessions:
-            # Handle naive datetime from SQLite as UTC
-            sched_time = session.scheduled_at
-            if sched_time.tzinfo is None:
-                sched_time = sched_time.replace(tzinfo=timezone.utc)
+            if not session.scheduled_at:
+                continue
+
+            sched_time = _ensure_tz(session.scheduled_at)
 
             if now > sched_time + timedelta(minutes=15):
                 logger.info(f"Sweeper: Session {session.room_id} EXPIRED (No show)")
@@ -156,7 +161,7 @@ def state_machine_sweeper():
         )
 
         for session in disconnected_sessions:
-            if session.disconnected_at and now > session.disconnected_at + timedelta(
+            if session.disconnected_at and now > _ensure_tz(session.disconnected_at) + timedelta(
                 minutes=15
             ):
                 logger.info(
@@ -184,7 +189,7 @@ def state_machine_sweeper():
                 and session.report_retry_count < 3
             ):
                 # Add a 2 minute delay between retries
-                if session.updated_at and now > session.updated_at + timedelta(
+                if session.updated_at and now > _ensure_tz(session.updated_at) + timedelta(
                     minutes=2
                 ):
                     logger.info(
@@ -196,7 +201,7 @@ def state_machine_sweeper():
 
             # Hard fallback: if active for over 2 hours, force finish
             if getattr(session, "activated_at", None) and not session.finished_at:
-                if now > session.activated_at + timedelta(minutes=120):
+                if now > _ensure_tz(session.activated_at) + timedelta(minutes=120):
                     logger.warning(
                         f"Sweeper: Session {session.room_id} active for >2hrs. Force closing."
                     )

@@ -345,7 +345,6 @@ class ReportMCPServer:
                     "error": f"PDF not found at {input_data.report_path}",
                 }
 
-            candidate_info = input_data.room_id  # Will be enriched by caller
             subject = f"📋 Interview Report: {input_data.room_id}"
             body_html = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px;">
