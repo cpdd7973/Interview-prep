@@ -1,21 +1,27 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import Dashboard from './pages/Dashboard'
 import InterviewRoom from './pages/InterviewRoom'
 import QuestionBank from './pages/QuestionBank'
 import Report from './pages/Report'
+import Login from './pages/Login'
 import './styles.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/interview/:roomId" element={<InterviewRoom />} />
-        <Route path="/questions" element={<QuestionBank />} />
-        <Route path="/report/:roomId" element={<Report />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/interview/:roomId" element={<InterviewRoom />} />
+          <Route path="/questions" element={<ProtectedRoute><QuestionBank /></ProtectedRoute>} />
+          <Route path="/report/:roomId" element={<Report />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 )

@@ -52,6 +52,21 @@ class Speaker(str, enum.Enum):
 
 
 # Models
+class User(Base):
+    """Authenticated users (recruiters/admins) who can schedule interviews."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    name = Column(String(255), nullable=False)
+    picture = Column(String(500), nullable=True)  # Google avatar URL
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    sessions = relationship("InterviewSession", back_populates="creator", foreign_keys="InterviewSession.created_by")
+
+
 class Candidate(Base):
     """Stores candidate PII separately for GDPR compliance."""
     __tablename__ = "candidates"
@@ -87,9 +102,11 @@ class InterviewSession(Base):
     completed_at = Column(DateTime, nullable=True)
     report_generated_at = Column(DateTime, nullable=True)
     report_retry_count = Column(Integer, default=0)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     
     # Relationships
     candidate = relationship("Candidate", back_populates="sessions")
+    creator = relationship("User", back_populates="sessions", foreign_keys=[created_by])
     transcript_chunks = relationship("TranscriptChunk", back_populates="session", cascade="all, delete-orphan")
     evaluation = relationship("Evaluation", back_populates="session", uselist=False, cascade="all, delete-orphan")
 

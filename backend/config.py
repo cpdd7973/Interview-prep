@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     
     # Security
     secret_key: str
+    jwt_expiry_hours: int = 168  # 7 days
     allowed_origins: str = "http://localhost:5173"
     
     # Logging

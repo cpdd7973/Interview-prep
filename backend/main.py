@@ -25,6 +25,7 @@ from config import settings
 from database import init_db, get_db
 from scheduler import start_scheduler, shutdown_scheduler
 from mcp_servers.session_mcp import session_mcp
+from auth import auth_router, get_current_user
 
 # Configure logging
 logging.basicConfig(
@@ -94,6 +95,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auth routes
+app.include_router(auth_router, prefix="/api/auth")
+
 
 # Health check endpoint
 @app.get("/health")
@@ -136,10 +140,10 @@ async def get_room_status(room_id: str):
 
 
 @app.post("/api/interviews/schedule")
-async def schedule_interview(interview_data: dict):
+async def schedule_interview(interview_data: dict, user = Depends(get_current_user)):
     """
     Schedule a new interview.
-    Called by admin dashboard.
+    Called by admin dashboard. Requires authentication.
     """
     # Run the orchestrator graph with PENDING status to trigger the scheduler node
     try:
@@ -180,10 +184,28 @@ async def schedule_interview(interview_data: dict):
                 "success": False,
                 "error": result["error"]
             }
-            
+        
+        # Tag the session with the authenticated user's ID
+        room_id = result.get("room_id")
+        if room_id and user:
+            try:
+                from database import SessionLocal, InterviewSession
+                def tag_owner():
+                    db = SessionLocal()
+                    try:
+                        session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+                        if session:
+                            session.created_by = user.id
+                            db.commit()
+                    finally:
+                        db.close()
+                await asyncio.to_thread(tag_owner)
+            except Exception as tag_err:
+                logger.warning(f"Failed to tag session owner: {tag_err}")
+
         return {
             "success": True,
-            "room_id": result.get("room_id"),
+            "room_id": room_id,
             "status": result.get("status")
         }
     except Exception as e:
@@ -199,31 +221,67 @@ async def schedule_interview(interview_data: dict):
 
 # List interviews endpoint
 @app.get("/api/interviews")
-async def list_interviews(status: str = None):
+async def list_interviews(status: str = None, user = Depends(get_current_user)):
     """
-    List all interviews with optional status filter.
+    List interviews created by the authenticated user.
     """
-    from database import SessionStatus
+    from database import SessionStatus, SessionLocal, InterviewSession, Candidate
     
-    status_enum = None
-    if status:
-        try:
-            status_enum = SessionStatus[status.upper()]
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-    
-    result = session_mcp.list_sessions(status=status_enum)
-    return result
+    db = SessionLocal()
+    try:
+        query = db.query(InterviewSession).filter(InterviewSession.created_by == user.id)
+        
+        if status:
+            try:
+                status_enum = SessionStatus[status.upper()]
+                query = query.filter(InterviewSession.status == status_enum)
+            except KeyError:
+                raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        
+        sessions = query.order_by(InterviewSession.scheduled_at.desc()).all()
+        
+        result = []
+        for s in sessions:
+            result.append({
+                "room_id": s.room_id,
+                "candidate_name": s.candidate.name if s.candidate else "Unknown",
+                "candidate_email": s.candidate.email if s.candidate else "",
+                "job_role": s.job_role,
+                "company": s.company,
+                "scheduled_at": s.scheduled_at.isoformat() if s.scheduled_at else None,
+                "status": s.status.value if s.status else "PENDING",
+                "daily_room_url": s.daily_room_url,
+                "activated_at": s.activated_at.isoformat() if s.activated_at else None,
+                "finished_at": s.finished_at.isoformat() if s.finished_at else None,
+                "report_generated_at": s.report_generated_at.isoformat() if s.report_generated_at else None,
+                "report_retry_count": s.report_retry_count or 0,
+                "disconnected_at": s.disconnected_at.isoformat() if s.disconnected_at else None,
+            })
+        
+        return {"success": True, "sessions": result}
+    finally:
+        db.close()
 
 
 # Cancel interview endpoint
 @app.post("/api/interviews/{room_id}/cancel")
-async def cancel_interview(room_id: str):
+async def cancel_interview(room_id: str, user = Depends(get_current_user)):
     """
-    Cancel a scheduled interview.
+    Cancel a scheduled interview. Only the creator can cancel.
     """
-    from database import SessionStatus
+    from database import SessionStatus, SessionLocal, InterviewSession
     from mcp_servers.session_mcp import UpdateStatusInput
+    
+    # Verify ownership
+    db = SessionLocal()
+    try:
+        session = db.query(InterviewSession).filter(InterviewSession.room_id == room_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        if session.created_by != user.id:
+            raise HTTPException(status_code=403, detail="You can only cancel your own interviews")
+    finally:
+        db.close()
     
     # Update status to CANCELLED
     result = session_mcp.update_status(UpdateStatusInput(

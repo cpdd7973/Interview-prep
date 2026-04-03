@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listInterviews, scheduleInterview, cancelInterview } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -10,6 +11,7 @@ export default function Dashboard() {
   const [currentTab, setCurrentTab] = useState('PENDING'); // PENDING, ACTIVE, COMPLETED
   const [confirmingCancelRoomId, setConfirmingCancelRoomId] = useState(null);
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -116,7 +118,20 @@ export default function Dashboard() {
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
-        <h1>Interview Prep</h1>
+        <div className="header-top-bar">
+          <h1>Interview Prep</h1>
+          {user && (
+            <div className="user-bar">
+              {user.picture ? (
+                <img src={user.picture} alt={user.name} className="user-avatar" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="user-avatar-fallback">{user.name?.charAt(0)?.toUpperCase() || '?'}</div>
+              )}
+              <span className="user-name">{user.name}</span>
+              <button className="btn-logout" onClick={logout} title="Sign out">↗ Sign out</button>
+            </div>
+          )}
+        </div>
         <p>Your comprehensive workspace for orchestrating AI-driven technical assessments. Effortlessly schedule interviews, monitor candidate progress in real-time, and access deep-dive analytics to streamline your hiring pipeline.</p>
       </div>
 
