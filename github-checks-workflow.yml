@@ -11,9 +11,6 @@ jobs:
   python-security:
     name: Python Security Scan
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./backend
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +28,7 @@ jobs:
         run: bandit -r . -f json -o bandit-report.json || true
 
       - name: Detect secrets
-        run: detect-secrets scan --baseline ../.secrets.baseline || true
+        run: detect-secrets scan --baseline .secrets.baseline || true
 
       - name: Pip audit (CVE check)
         run: pip-audit
@@ -39,9 +36,6 @@ jobs:
   python-quality:
     name: Python Code Quality
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./backend
     steps:
       - uses: actions/checkout@v4
 
@@ -67,9 +61,6 @@ jobs:
   python-tests:
     name: Python Unit Tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./backend
     steps:
       - uses: actions/checkout@v4
 
@@ -84,20 +75,17 @@ jobs:
           pip install -r requirements.txt pytest pytest-cov
 
       - name: Run tests
-        run: pytest --cov=. --cov-report=xml || true
+        run: pytest --cov=. --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         with:
-          files: ./backend/coverage.xml
+          files: ./coverage.xml
 
   # ===== JAVASCRIPT/REACT CHECKS =====
   node-security:
     name: Node.js Security Scan
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -107,17 +95,20 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run npm audit
         run: npm audit --audit-level=moderate || true
 
+      - name: Check for known vulnerabilities with Snyk
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        continue-on-error: true
+
   node-quality:
     name: Node.js Code Quality
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -127,20 +118,17 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Lint with ESLint
-        run: npm run lint || true
+        run: npm run lint
 
       - name: Format check with Prettier
-        run: npx prettier --check . || true
+        run: npx prettier --check .
 
   node-tests:
     name: Node.js Unit Tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -150,10 +138,10 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests
-        run: npm test -- --coverage || true
+        run: npm test -- --coverage
 
   # ===== PRE-COMMIT CHECKS =====
   pre-commit:
@@ -180,13 +168,13 @@ jobs:
     steps:
       - name: Check job statuses
         run: |
-          if [ "${{ needs.python-security.result }}" != "success" ] && [ "${{ needs.python-security.result }}" != "skipped" ] || \
-             [ "${{ needs.python-quality.result }}" != "success" ] && [ "${{ needs.python-quality.result }}" != "skipped" ] || \
-             [ "${{ needs.python-tests.result }}"  != "success" ] && [ "${{ needs.python-tests.result }}"  != "skipped" ] || \
-             [ "${{ needs.node-security.result }}"  != "success" ] && [ "${{ needs.node-security.result }}"  != "skipped" ] || \
-             [ "${{ needs.node-quality.result }}"   != "success" ] && [ "${{ needs.node-quality.result }}"   != "skipped" ] || \
-             [ "${{ needs.node-tests.result }}"     != "success" ] && [ "${{ needs.node-tests.result }}"     != "skipped" ] || \
-             [ "${{ needs.pre-commit.result }}"    != "success" ] && [ "${{ needs.pre-commit.result }}"    != "skipped" ]; then
+          if [ "${{ needs.python-security.result }}" != "success" ] || \
+             [ "${{ needs.python-quality.result }}" != "success" ] || \
+             [ "${{ needs.python-tests.result }}" != "success" ] || \
+             [ "${{ needs.node-security.result }}" != "success" ] || \
+             [ "${{ needs.node-quality.result }}" != "success" ] || \
+             [ "${{ needs.node-tests.result }}" != "success" ] || \
+             [ "${{ needs.pre-commit.result }}" != "success" ]; then
             echo "❌ Some checks failed. Fix them before merging."
             exit 1
           fi

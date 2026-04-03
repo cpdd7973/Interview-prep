@@ -13,7 +13,7 @@ repos:
         args: ['-ll']
         files: \.py$
 
-    - repo: local
+  - repo: local
     hooks:
       - id: pip-audit
         name: pip-audit (CVE scan)
