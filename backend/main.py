@@ -471,7 +471,9 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
             "job_role": session.job_role,
             "company": session.company,
             "interviewer_designation": session.interviewer_designation,
-            "scheduled_at_iso": session.scheduled_at.isoformat() if session.scheduled_at else "",
+            "scheduled_at_iso": (
+                session.scheduled_at.isoformat() if session.scheduled_at else ""
+            ),
             "daily_room_url": session.daily_room_url or "",
         }
         db.close()
