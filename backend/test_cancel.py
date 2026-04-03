@@ -3,7 +3,7 @@ import requests
 try:
     print("Testing cancel endpoint...")
     # Fetch a room ID first
-    res = requests.get("http://127.0.0.1:8001/api/interviews")
+    res = requests.get("http://127.0.0.1:8001/api/interviews", timeout=10)
     if not res.ok:
         print(f"Failed to fetch interviews: {res.status_code}")
         print(res.text)
@@ -18,7 +18,7 @@ try:
     print(f"Cancelling room: {room_id}")
 
     # Try to cancel
-    res = requests.post(f"http://127.0.0.1:8001/api/interviews/{room_id}/cancel")
+    res = requests.post(f"http://127.0.0.1:8001/api/interviews/{room_id}/cancel", timeout=10)
     print(f"Status Code: {res.status_code}")
     print(f"Response: {res.text}")
     print(f"Headers: {res.headers}")
