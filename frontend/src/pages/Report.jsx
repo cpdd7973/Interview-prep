@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getEvaluationReport } from '../services/api';
+import './Report.css'; // Importing the premium styles
 
 export default function Report() {
   const { roomId } = useParams();
@@ -27,65 +28,105 @@ export default function Report() {
     fetchReport();
   }, [roomId]);
 
-  if (loading) return <div style={{ padding: '20px' }}>Loading evaluation report...</div>;
-  if (error) return <div style={{ padding: '20px', color: 'red' }}>Error: {error}</div>;
-  if (!reportData) return <div style={{ padding: '20px' }}>No report found for this session. Did it complete?</div>;
+  if (loading) return <div className="report-loading">Loading evaluation report...</div>;
+  if (error) return <div className="report-error">Error: {error}</div>;
+  if (!reportData) return <div className="report-empty">No report found for this session. Did it complete?</div>;
+
+  // Derive score class
+  let scoreClass = 'score-poor';
+  if (reportData.overall_score >= 7) scoreClass = 'score-excellent';
+  else if (reportData.overall_score >= 5) scoreClass = 'score-average';
 
   return (
-    <div className="container" style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>Interview Report</h1>
-        <Link to="/" style={{ padding: '10px 15px', background: '#6c757d', color: '#FFF', textDecoration: 'none', borderRadius: '4px' }}>
-          Back to Dashboard
+    <main className="report-container">
+      <header className="report-header">
+        <h1 className="report-title">Interview Report</h1>
+        <Link to="/" className="btn-back">
+          ← Back to Dashboard
         </Link>
-      </div>
+      </header>
 
-      <div style={{ backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-        <h2>Candidate Info</h2>
-        <p><strong>Name:</strong> {reportData.candidate_name}</p>
-        <p><strong>Role:</strong> {reportData.job_role} at {reportData.company}</p>
-        <p><strong>Date:</strong> {new Date(reportData.completed_at || reportData.scheduled_at).toLocaleString()}</p>
-      </div>
+      <section className="candidate-card">
+        <h2>Candidate Profile</h2>
+        <div className="candidate-info-grid">
+          <div className="info-item">
+            <span className="info-label">Name</span>
+            <span className="info-value">{reportData.candidate_name}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Role</span>
+            <span className="info-value">{reportData.job_role}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Company</span>
+            <span className="info-value">{reportData.company}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">Date Completed</span>
+            <span className="info-value">{new Date(reportData.completed_at || reportData.scheduled_at).toLocaleDateString()}</span>
+          </div>
+        </div>
+      </section>
 
-      <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
-        <div style={{ flex: 1, backgroundColor: '#e9ecef', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
+      <section className="score-section">
+        <div className="overall-score-card">
           <h3>Overall Score</h3>
-          <h1 style={{ color: reportData.overall_score >= 7 ? '#28a745' : reportData.overall_score >= 5 ? '#ffc107' : '#dc3545', fontSize: '3rem', margin: '10px 0' }}>
-            {reportData.overall_score.toFixed(1)} / 10
-          </h1>
-        </div>
-
-        <div style={{ flex: 2, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-          <div style={{ padding: '10px', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-            <strong>Technical:</strong> {reportData.technical_score}/10
-          </div>
-          <div style={{ padding: '10px', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-            <strong>Communication:</strong> {reportData.communication_score}/10
-          </div>
-          <div style={{ padding: '10px', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-            <strong>Problem Solving:</strong> {reportData.problem_solving_score}/10
-          </div>
-          <div style={{ padding: '10px', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-            <strong>Behavioral:</strong> {reportData.behavioral_score}/10
-          </div>
-          <div style={{ padding: '10px', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-            <strong>Confidence:</strong> {reportData.confidence_score}/10
+          <div className={`score-value ${scoreClass}`}>
+            {reportData.overall_score.toFixed(1)}<span className="sub-score-max">/10</span>
           </div>
         </div>
-      </div>
 
-      <div style={{ backgroundColor: '#fff', border: '1px solid #dee2e6', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-        <h2>Qualitative Feedback</h2>
-        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+        <div className="sub-scores-grid">
+          <div className="sub-score-item">
+            <span className="sub-score-label">Technical</span>
+            <span className="sub-score-number">{reportData.technical_score}<span className="sub-score-max">/10</span></span>
+          </div>
+          <div className="sub-score-item">
+            <span className="sub-score-label">Communication</span>
+            <span className="sub-score-number">{reportData.communication_score}<span className="sub-score-max">/10</span></span>
+          </div>
+          <div className="sub-score-item">
+            <span className="sub-score-label">Problem Solving</span>
+            <span className="sub-score-number">{reportData.problem_solving_score}<span className="sub-score-max">/10</span></span>
+          </div>
+          <div className="sub-score-item">
+            <span className="sub-score-label">Behavioral</span>
+            <span className="sub-score-number">{reportData.behavioral_score}<span className="sub-score-max">/10</span></span>
+          </div>
+          <div className="sub-score-item" style={{ gridColumn: '1 / -1' }}>
+            <span className="sub-score-label">Confidence</span>
+            <span className="sub-score-number">{reportData.confidence_score}<span className="sub-score-max">/10</span></span>
+          </div>
+        </div>
+      </section>
+
+      <section className="feedback-card">
+        <h2>
+          {/* Subtle icon placeholder */}
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#3b82f6' }}>
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+          </svg>
+          Qualitative Feedback
+        </h2>
+        <div className="feedback-content">
           {reportData.qualitative_feedback}
         </div>
-      </div>
+      </section>
 
       {reportData.report_path && (
-        <div style={{ textAlign: 'center', marginTop: '30px' }}>
-          <p style={{ color: '#6c757d' }}>A PDF version of this report has been generated and emailed to the admin.</p>
-        </div>
+        <footer className="report-footer">
+          <div className="pdf-note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            A PDF version of this report has been safely generated and emailed to the admin.
+          </div>
+        </footer>
       )}
-    </div>
+    </main>
   );
 }
