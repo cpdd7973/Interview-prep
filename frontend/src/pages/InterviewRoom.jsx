@@ -59,6 +59,7 @@ const InterviewRoom = () => {
 
   // Emergency browser STT fallback
   const [manualText, setManualText] = useState("");
+  const [isChatVisible, setIsChatVisible] = useState(false);
 
   // ── New Diagnostic & Fallback States ──
   const [micActive, setMicActive] = useState(false);
@@ -754,6 +755,20 @@ const InterviewRoom = () => {
         {/* Main Content Area */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
           
+          {/* Mobile Chat Drawer Toggle */}
+          <button 
+            className="mobile-chat-toggle"
+            onClick={() => setIsChatVisible(!isChatVisible)}
+            title="Toggle Chat"
+          >
+            💬
+          </button>
+          
+          <div 
+            className={`chat-overlay-backdrop ${isChatVisible ? 'visible' : ''}`}
+            onClick={() => setIsChatVisible(false)}
+          ></div>
+          
           {/* Floating Diagnostic Dashboard (Visible in Active room) */}
           <div className="diagnostic-badge" style={{
             position: 'absolute',
@@ -786,10 +801,11 @@ const InterviewRoom = () => {
           </div>
 
           {/* Left Sidebar: Transcript + Text Input (Priya's pattern) */}
-          <div style={{
-            flex: '1', maxWidth: '400px', borderRight: '1px solid #2d3748',
-            display: 'flex', flexDirection: 'column', backgroundColor: '#1e293b',
-            overflow: 'hidden'
+          <div className={`chat-container ${isChatVisible ? 'open' : ''}`} style={{
+            backgroundColor: '#1e293b',
+            borderRight: '1px solid #2d3748',
+            borderLeft: 'none',
+            zIndex: 50 // Ensures it slides over the center area
           }}>
             <div style={{ padding: '16px', borderBottom: '1px solid #2d3748', fontWeight: '600', color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <span>Live Transcript</span>
