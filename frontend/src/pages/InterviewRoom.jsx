@@ -720,22 +720,19 @@ const InterviewRoom = () => {
         fontFamily: "'Inter', sans-serif", color: 'white', overflow: 'hidden'
       }}>
         {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px 32px', borderBottom: '1px solid #2d3748', backgroundColor: '#2d3748'
-        }}>
-          <div style={{ flex: 1 }}>
+        <div className="active-header">
+          <div className="active-header-col">
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>{roomState.company} - {roomState.job_role}</h2>
             <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#a0aec0' }}>Candidate: {roomState.candidate_name}</p>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          <div className="active-header-center">
             <div style={{ color: '#e2e8f0', fontSize: '14px', background: 'rgba(0,0,0,0.2)', padding: '6px 16px', borderRadius: '15px', fontWeight: '500' }}>
               Progress: Question {Math.max(1, Math.floor(messages.filter(m => m && m.speaker && m.speaker.toLowerCase() === 'ai').length))} of ~5
             </div>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '20px' }}>
+          <div className="active-header-right">
             <VoiceIndicator isAISpeaking={isAISpeaking} />
             <div style={{
               display: 'flex', alignItems: 'center', gap: '8px',
@@ -757,9 +754,10 @@ const InterviewRoom = () => {
           
           {/* Mobile Chat Drawer Toggle */}
           <button 
-            className="mobile-chat-toggle"
+            className={`mobile-chat-toggle ${isChatVisible ? 'hidden' : ''}`}
             onClick={() => setIsChatVisible(!isChatVisible)}
             title="Toggle Chat"
+            style={{ zIndex: 90 }}
           >
             💬
           </button>
@@ -767,6 +765,7 @@ const InterviewRoom = () => {
           <div 
             className={`chat-overlay-backdrop ${isChatVisible ? 'visible' : ''}`}
             onClick={() => setIsChatVisible(false)}
+            style={{ zIndex: 900 }}
           ></div>
           
           {/* Floating Diagnostic Dashboard (Visible in Active room) */}
@@ -774,7 +773,6 @@ const InterviewRoom = () => {
             position: 'absolute',
             top: '20px',
             right: '20px',
-            zIndex: 100,
             background: 'rgba(0,0,0,0.6)',
             backdropFilter: 'blur(5px)',
             padding: '8px 12px',
@@ -804,15 +802,23 @@ const InterviewRoom = () => {
           <div className={`chat-container ${isChatVisible ? 'open' : ''}`} style={{
             backgroundColor: '#1e293b',
             borderRight: '1px solid #2d3748',
-            borderLeft: 'none',
-            zIndex: 50 // Ensures it slides over the center area
+            borderLeft: 'none'
           }}>
             <div style={{ padding: '16px', borderBottom: '1px solid #2d3748', fontWeight: '600', color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <span>Live Transcript</span>
-              <span style={{ fontSize: '12px', color: '#a0aec0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '8px', height: '8px', backgroundColor: '#48bb78', borderRadius: '50%', animation: 'pulse 2s infinite' }}></span>
-                Recording
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '12px', color: '#a0aec0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', backgroundColor: '#48bb78', borderRadius: '50%', animation: 'pulse 2s infinite' }}></span>
+                  Recording
+                </span>
+                <button 
+                  className="mobile-chat-close"
+                  onClick={() => setIsChatVisible(false)}
+                  style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '16px', cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* VAD INDICATOR showing candidate when mic is active and speech detected */}
@@ -994,8 +1000,7 @@ const InterviewRoom = () => {
               padding: '12px 32px', fontSize: '16px', fontWeight: 'bold',
               backgroundColor: showLeaveConfirm ? '#ff8c00' : '#e53e3e', 
               color: 'white', border: 'none',
-              borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s',
-              zIndex: 100
+              borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s'
             }}
           >
             {showLeaveConfirm ? "Confirm Exit?" : "Leave Interview"}

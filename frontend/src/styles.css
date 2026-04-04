@@ -205,6 +205,10 @@ body {
   background: #334155;
 }
 
+.mobile-chat-close {
+  display: none;
+}
+
 .chat-overlay-backdrop {
   display: none;
   position: absolute;
@@ -340,6 +344,34 @@ button:hover {
   margin-top: 20px;
 }
 
+/* Active Room Flexible Header */
+.active-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  border-bottom: 1px solid #2d3748;
+  background-color: #2d3748;
+}
+
+.active-header-col {
+  flex: 1;
+}
+
+.active-header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.active-header-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+}
+
 /* Interview UI Mobile Responsiveness */
 @media (max-width: 768px) {
   .mobile-chat-toggle {
@@ -356,15 +388,36 @@ button:hover {
   }
 
   .chat-container {
-    position: absolute;
-    top: 60px; /* Header height */
+    position: fixed;
+    top: 0;
+    bottom: 0;
     right: 0;
     width: 85%;
     max-width: 350px;
-    height: calc(100vh - 120px);
-    z-index: 50;
-    box-shadow: -5px 0 25px rgba(0,0,0,0.15);
+    height: 100vh;
+    z-index: 9999;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.5);
     transform: translateX(105%); /* Hidden completely off-screen by default */
+  }
+
+  .mobile-chat-toggle.hidden {
+    display: none !important;
+  }
+
+  .mobile-chat-close {
+    display: block;
+  }
+
+  .active-header {
+    flex-wrap: wrap;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .active-header-col, .active-header-center, .active-header-right {
+    flex: 0 0 100%;
+    text-align: center;
+    justify-content: center;
   }
 
   .chat-container.open {
