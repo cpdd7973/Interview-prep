@@ -161,9 +161,9 @@ def state_machine_sweeper():
         )
 
         for session in disconnected_sessions:
-            if session.disconnected_at and now > _ensure_tz(session.disconnected_at) + timedelta(
-                minutes=15
-            ):
+            if session.disconnected_at and now > _ensure_tz(
+                session.disconnected_at
+            ) + timedelta(minutes=15):
                 logger.info(
                     f"Sweeper: Session {session.room_id} dropped for 15m. Forcing completion."
                 )
@@ -189,9 +189,9 @@ def state_machine_sweeper():
                 and session.report_retry_count < 3
             ):
                 # Add a 2 minute delay between retries
-                if session.updated_at and now > _ensure_tz(session.updated_at) + timedelta(
-                    minutes=2
-                ):
+                if session.updated_at and now > _ensure_tz(
+                    session.updated_at
+                ) + timedelta(minutes=2):
                     logger.info(
                         f"Sweeper: Retrying report generation for {session.room_id}"
                     )

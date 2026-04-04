@@ -32,7 +32,9 @@ async def _init_gemini_client():
     if not GEMINI_AVAILABLE or not settings.gemini_api_key:
         return None
     return ChatGoogleGenerativeAI(
-        google_api_key=settings.gemini_api_key, model="gemini-1.5-flash", temperature=0.7
+        google_api_key=settings.gemini_api_key,
+        model="gemini-1.5-flash",
+        temperature=0.7,
     )
 
 

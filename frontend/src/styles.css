@@ -77,6 +77,8 @@ body {
 .waiting-screen {
   text-align: center;
   max-width: 600px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  color: #1e293b;
 }
 
 .waiting-icon {
@@ -113,10 +115,12 @@ body {
 
 .waiting-tips {
   background: white;
-  padding: 20px;
-  border-radius: 8px;
+  padding: 24px;
+  border-radius: 12px;
   margin-top: 30px;
   text-align: left;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  border: 1px solid #e2e8f0;
 }
 
 .waiting-tips ul {
@@ -125,7 +129,13 @@ body {
 }
 
 .waiting-tips li {
-  padding: 8px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+  color: #475569;
+}
+
+.waiting-tips li:last-child {
+  border-bottom: none;
 }
 
 /* Active Interview */
@@ -136,6 +146,8 @@ body {
   display: flex;
   flex-direction: row; /* Layout side-by-side */
   flex-wrap: wrap; /* Headers/Controls take full width */
+  position: relative;
+  overflow: hidden;
 }
 
 .interview-header, .interview-controls {
@@ -160,10 +172,55 @@ body {
 .chat-container {
   flex: 0 0 350px;
   background: white;
-  border-left: 1px solid #ddd;
+  border-left: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+/* Mobile Toggle UI */
+.mobile-chat-toggle {
+  display: none;
+  position: absolute;
+  top: 75px; /* Just below header */
+  right: 15px;
+  z-index: 100;
+  background: #1e293b;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mobile-chat-toggle:hover {
+  transform: scale(1.05);
+  background: #334155;
+}
+
+.mobile-chat-close {
+  display: none;
+}
+
+.chat-overlay-backdrop {
+  display: none;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 40;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.chat-overlay-backdrop.visible {
+  opacity: 1;
 }
 
 .chat-interface {
@@ -249,8 +306,11 @@ body {
   max-width: 600px;
   background: white;
   padding: 40px;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.05);
+  font-family: 'Inter', -apple-system, sans-serif;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
 }
 
 .success-icon,
@@ -282,4 +342,89 @@ button:hover {
 
 .retry-button {
   margin-top: 20px;
+}
+
+/* Active Room Flexible Header */
+.active-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  border-bottom: 1px solid #2d3748;
+  background-color: #2d3748;
+}
+
+.active-header-col {
+  flex: 1;
+}
+
+.active-header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.active-header-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+}
+
+/* Interview UI Mobile Responsiveness */
+@media (max-width: 768px) {
+  .mobile-chat-toggle {
+    display: flex;
+  }
+  
+  .chat-overlay-backdrop {
+    display: block;
+    pointer-events: none;
+  }
+
+  .chat-overlay-backdrop.visible {
+    pointer-events: auto;
+  }
+
+  .chat-container {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 85%;
+    max-width: 350px;
+    height: 100vh;
+    z-index: 9999;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+    transform: translateX(105%); /* Hidden completely off-screen by default */
+  }
+
+  .mobile-chat-toggle.hidden {
+    display: none !important;
+  }
+
+  .mobile-chat-close {
+    display: block;
+  }
+
+  .active-header {
+    flex-wrap: wrap;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .active-header-col, .active-header-center, .active-header-right {
+    flex: 0 0 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .chat-container.open {
+    transform: translateX(0); /* Slide into view */
+  }
+
+  .daily-room-container {
+    flex: 0 0 100%; /* Take full 100% video width */
+  }
 }

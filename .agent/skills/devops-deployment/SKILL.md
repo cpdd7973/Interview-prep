@@ -242,7 +242,7 @@ services:
       target: runtime
     ports: ["8000:8000"]
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/interview_dev
+      - DATABASE_URL=postgresql+asyncpg://<DB_USER>:<DB_PASSWORD>@postgres:5432/interview_dev
       - REDIS_URL=redis://redis:6379/0
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ENVIRONMENT=development
