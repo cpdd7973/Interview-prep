@@ -37,3 +37,8 @@ frontend/dist/
 
 # Agent brain (conversation artifacts)
 .gemini/
+
+# Reports
+backend/reports/*.pdf
+!backend/reports/test_report.pdf
+

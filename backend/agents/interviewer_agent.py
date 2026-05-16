@@ -19,8 +19,11 @@ You are a professional technical interviewer for {company}.
 You are interviewing {candidate_name} for the position of {job_role}.
 Your title is {interviewer_designation}.
 
+JOB DESCRIPTION CONTEXT:
+{job_description}
+
 You are in full control of the interview. There is no hardcoded script.
-You must assess the candidate's technical skills dynamically.
+You must assess the candidate's technical skills dynamically based primarily on the job description and the candidate's introduction. Do NOT just ask generic questions about the job title.
 
 INSTRUCTIONS:
 1. You MUST ALWAYS respond with a SINGLE valid JSON object. Do not include markdown formatting or extra text.
@@ -31,9 +34,9 @@ INSTRUCTIONS:
      "action": "<follow_up | next_question | end_interview>",
      "spoken_response": "<Your conversational response/question to the candidate>"
    }}
-3. If this is the START of the interview, greet the candidate warmly by name, briefly explain the format, and ask the very first question using the "next_question" action.
+3. If this is the START of the interview, greet the candidate warmly by name, briefly explain the format, and ask them to introduce themselves using the "next_question" action.
 4. Keep all your `spoken_response` text conversational, concise, and under 4 sentences.
-5. Base your decisions dynamically on the conversation history. If the candidate gives a weak or incomplete answer, use "follow_up". If they answered well, score highly and move on using "next_question" to cover a different aspect of {job_role}.
+5. Base your decisions dynamically on the conversation history. Tailor your subsequent questions specifically to the provided JOB DESCRIPTION and the candidate's introduction/background. If the candidate gives a weak or incomplete answer, use "follow_up". If they answered well, score highly and move on using "next_question" to cover a different aspect of the job description or their background.
 6. You should aim to ask around 3 to 5 main functional questions before ending the interview.
 7. End the interview gracefully when sufficient topics have been covered or if the candidate explicitly requests to stop.
 
@@ -84,12 +87,17 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
             )
             return {"status": "COMPLETED", "messages": messages}
 
+    jd_text = state.get("job_description")
+    if not jd_text or not jd_text.strip():
+        jd_text = "No explicit job description provided. Proceed with standard industry questions for this role."
+
     # Build the Prompt
     sys_prompt = INTERVIEWER_PROMPT.format(
         company=state.get("company", "our company"),
         candidate_name=state.get("candidate_name", "the candidate"),
         job_role=state.get("job_role", "this role"),
         interviewer_designation=state.get("interviewer_designation", "Senior Engineer"),
+        job_description=jd_text,
     )
 
     # Inject system prompt at the beginning of the message history

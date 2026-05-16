@@ -1,19 +1,20 @@
----
+***
+
 name: api-patterns
 description: Rate limiting, request validation middleware, error handling, health checks, and OpenAPI spec patterns for Python FastAPI and Node.js Fastify backends serving LLM-powered applications.
----
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # API Patterns Reference
 
 Production-hardening patterns for the interview agent backend.
 
----
+***
 
 ## Rate Limiting
 
 Per-session and per-IP rate limiting using Redis sliding window.
 
-```python
+```Python
 # FastAPI — Redis sliding window rate limiter
 import time
 from fastapi import Request, HTTPException
@@ -62,7 +63,7 @@ async def submit_message(request: Request, ...):
     ...
 ```
 
-```typescript
+```TypeScript
 // Fastify — rate limiting with @fastify/rate-limit
 import rateLimit from '@fastify/rate-limit'
 
@@ -90,11 +91,11 @@ app.post('/sessions/:sessionId/messages', {
 })
 ```
 
----
+***
 
 ## Request Validation Middleware
 
-```python
+```Python
 # FastAPI — global validation error handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -134,7 +135,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 ```
 
-```typescript
+```TypeScript
 // Fastify — global error handler
 app.setErrorHandler((error, request, reply) => {
   // Validation errors
@@ -165,11 +166,11 @@ app.setErrorHandler((error, request, reply) => {
 })
 ```
 
----
+***
 
 ## Health Check Endpoints
 
-```python
+```Python
 # FastAPI health check with dependency checks
 from enum import Enum
 
@@ -236,13 +237,13 @@ async def check_llm_connectivity() -> dict:
         return {"status": "error", "error": str(e), "critical": False}
 ```
 
----
+***
 
 ## OpenAPI Spec Patterns
 
 Good OpenAPI documentation saves your frontend team hours of guesswork.
 
-```python
+```Python
 # FastAPI — enrich OpenAPI with examples and response schemas
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
@@ -307,11 +308,11 @@ app.openapi = custom_openapi
 async def create_session(...): ...
 ```
 
----
+***
 
 ## CORS Configuration
 
-```python
+```Python
 # FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -332,7 +333,7 @@ app.add_middleware(
 )
 ```
 
-```typescript
+```TypeScript
 // Fastify
 import cors from '@fastify/cors'
 
@@ -351,13 +352,13 @@ await app.register(cors, {
 })
 ```
 
----
+***
 
 ## Request ID Middleware
 
 Every request needs a traceable ID. Essential for debugging distributed systems.
 
-```python
+```Python
 import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -378,7 +379,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestIdMiddleware)
 ```
 
-```typescript
+```TypeScript
 // Fastify request ID is built-in — just configure it
 const app = Fastify({
   logger: {
@@ -401,11 +402,11 @@ app.addHook('onSend', async (request, reply) => {
 })
 ```
 
----
+***
 
 ## Security Headers
 
-```python
+```Python
 from starlette.middleware.base import BaseHTTPMiddleware
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -425,3 +426,4 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 ```
+

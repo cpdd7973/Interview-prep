@@ -5,7 +5,8 @@ Do not edit manually.
 
 ## Format
 
----
+***
+
 **Ref**: ISSUE-001
 **Date**: YYYY-MM-DD
 **Risk level**: Low | Medium | High
@@ -13,7 +14,8 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: (if any)
 **Retries**: 0
----
+--------------
+
 **Ref**: ISSUE-020, ISSUE-021, ISSUE-022
 **Date**: 2026-03-22
 **Risk level**: High
@@ -21,7 +23,8 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: none
 **Retries**: 0
----
+--------------
+
 **Ref**: ISSUE-023
 **Date**: 2026-03-22
 **Risk level**: Medium
@@ -29,7 +32,8 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: none
 **Retries**: 0
----
+--------------
+
 **Ref**: ISSUE-024
 **Date**: 2026-03-22
 **Risk level**: Medium
@@ -37,7 +41,8 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: none
 **Retries**: 0
----
+--------------
+
 **Ref**: ISSUE-025
 **Date**: 2026-03-22
 **Risk level**: Medium
@@ -45,7 +50,8 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: none
 **Retries**: 0
----
+--------------
+
 **Ref**: ISSUE-026
 **Date**: 2026-03-22
 **Risk level**: Medium
@@ -53,7 +59,8 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: none
 **Retries**: 0
----
+--------------
+
 **Ref**: ISSUE-027
 **Date**: 2026-03-23
 **Risk level**: Medium
@@ -61,12 +68,14 @@ Do not edit manually.
 **Checks failed**: none
 **Warning**: none
 **Retries**: 1
----
+--------------
 
 ## Log
-- [2026-03-22] ISSUE-020, ISSUE-021, ISSUE-022: PASS
-- [2026-03-22] ISSUE-023: PASS
-- [2026-03-22] ISSUE-024: PASS (Rejoin Audio Kickstart logic).
-- [2026-03-22] ISSUE-025: PASS (Post-interview pipeline fixed with .ainvoke() and persistent report paths).
-- [2026-03-22] ISSUE-026: PASS (Initial Greeting Audio signaling and VAD tuning).
-- [2026-03-23] ISSUE-027: PASS (Disk Cleanup & Groq STT).
+
+* \[2026-03-22] ISSUE-020, ISSUE-021, ISSUE-022: PASS
+* \[2026-03-22] ISSUE-023: PASS
+* \[2026-03-22] ISSUE-024: PASS (Rejoin Audio Kickstart logic).
+* \[2026-03-22] ISSUE-025: PASS (Post-interview pipeline fixed with .ainvoke() and persistent report paths).
+* \[2026-03-22] ISSUE-026: PASS (Initial Greeting Audio signaling and VAD tuning).
+* \[2026-03-23] ISSUE-027: PASS (Disk Cleanup & Groq STT).
+

@@ -116,6 +116,7 @@ class InterviewSession(Base):
         Integer, ForeignKey("candidates.id"), nullable=False, index=True
     )
     job_role = Column(String(100), nullable=False, index=True)
+    job_description = Column(Text, nullable=True)
     company = Column(String(255), nullable=False)
     interviewer_designation = Column(String(255), nullable=False)
     scheduled_at = Column(DateTime, nullable=False, index=True)
