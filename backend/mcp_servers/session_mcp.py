@@ -38,6 +38,7 @@ class CreateSessionInput(BaseModel):
     candidate_email: str = Field(..., description="Candidate's email address")
     candidate_name: str = Field(..., description="Candidate's full name")
     job_role: str = Field(..., description="Target job role/position")
+    job_description: Optional[str] = Field(None, description="Job description context")
     company: str = Field(..., description="Company name")
     interviewer_designation: str = Field(
         ..., description="Interviewer's designation/title"
@@ -115,6 +116,7 @@ class SessionMCPServer:
                 room_id=room_id,
                 candidate_id=candidate.id,
                 job_role=input_data.job_role,
+                job_description=input_data.job_description,
                 company=input_data.company,
                 interviewer_designation=input_data.interviewer_designation,
                 scheduled_at=input_data.scheduled_at,

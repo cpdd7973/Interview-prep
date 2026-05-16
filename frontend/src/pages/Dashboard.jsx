@@ -20,6 +20,7 @@ export default function Dashboard() {
     job_role: '',
     company: '',
     interviewer_designation: '',
+    job_description: '',
     scheduled_at: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,7 +72,7 @@ export default function Dashboard() {
       if (res.success) {
         setFormData({
           candidate_email: '', candidate_name: '', job_role: '',
-          company: '', interviewer_designation: '', scheduled_at: ''
+          company: '', interviewer_designation: '', job_description: '', scheduled_at: ''
         });
         if (currentTab === 'PENDING') fetchInterviews();
         else setCurrentTab('PENDING');
@@ -183,6 +184,20 @@ export default function Dashboard() {
                   required
                 />
               </div>
+            </div>
+
+            {/* Note: Outside form-grid to stretch full width */}
+            <div className="form-group full-width" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+              <label>📝 Optional: Paste Job Description</label>
+              <textarea
+                name="job_description"
+                className="form-input"
+                placeholder="Paste the job description here to help the AI interviewer generate role-specific questions..."
+                value={formData.job_description}
+                onChange={handleInputChange}
+                rows={5}
+                style={{ resize: 'vertical', minHeight: '100px' }}
+              />
             </div>
 
             <button type="submit" className="btn-primary" disabled={isSubmitting}>

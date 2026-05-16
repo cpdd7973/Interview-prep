@@ -1,13 +1,14 @@
----
+***
+
 name: worker-patterns
 description: Worker scaling, priority queues, job progress reporting, distributed locking, and observability patterns for Celery (Python) and BullMQ (Node.js) in LLM-powered application backends.
----
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Worker Patterns Reference
 
 Production patterns for async job workers handling LLM tasks.
 
----
+***
 
 ## Worker Scaling Strategy
 
@@ -36,7 +37,7 @@ Formula for worker count:
 
 ### Celery Worker Configuration
 
-```python
+```Python
 # celery_config.py
 from kombu import Queue
 
@@ -66,7 +67,7 @@ CELERY_TASK_ROUTES = {
 
 ### BullMQ Priority Queues
 
-```typescript
+```TypeScript
 // Producer — assign priority (1=highest, 10=lowest)
 await messageQueue.add(
   'processMessage',
@@ -91,13 +92,13 @@ const worker = new Worker(
 )
 ```
 
----
+***
 
 ## Job Progress Reporting
 
 Clients need to know where their job is — not just "processing."
 
-```python
+```Python
 # Celery — granular progress updates
 from celery import current_task
 
@@ -154,7 +155,7 @@ async def get_job_status(job_id: str):
     }
 ```
 
-```typescript
+```TypeScript
 // BullMQ — progress with typed metadata
 interface JobProgress {
   percent: number
@@ -205,13 +206,13 @@ app.get('/jobs/:jobId', async (request, reply) => {
 })
 ```
 
----
+***
 
 ## Distributed Locking
 
 Prevent duplicate processing when a client retries and the original job is still running.
 
-```python
+```Python
 import redis.asyncio as aioredis
 from contextlib import asynccontextmanager
 
@@ -258,11 +259,11 @@ async def process_message_safe(session_id: str, message_id: str, content: str):
         # This message is already being processed — idempotent skip
 ```
 
----
+***
 
 ## Dead Letter Queue Handling
 
-```python
+```Python
 # Celery — catch and route permanently failed tasks
 from celery.signals import task_failure
 
@@ -310,7 +311,7 @@ def handle_task_failure(
     )
 ```
 
-```typescript
+```TypeScript
 // BullMQ — dead letter queue with alerting
 worker.on('failed', async (job: Job | undefined, error: Error) => {
   if (!job) return
@@ -350,13 +351,13 @@ worker.on('failed', async (job: Job | undefined, error: Error) => {
 })
 ```
 
----
+***
 
 ## Observability
 
 ### Structured Logging
 
-```python
+```Python
 import structlog
 
 logger = structlog.get_logger()
@@ -383,7 +384,7 @@ task_logger.info("task_complete", duration_ms=duration_ms, tokens_generated=toke
 
 ### Key Metrics to Track
 
-```python
+```Python
 # Prometheus metrics for the interview API
 from prometheus_client import Counter, Histogram, Gauge
 
@@ -434,7 +435,7 @@ ws_connections_active = Gauge("websocket_connections_active", "Active WS connect
 
 ### Distributed Tracing (OpenTelemetry)
 
-```python
+```Python
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
@@ -461,11 +462,11 @@ async def run_llm_call(messages: list[dict], session_id: str) -> str:
         return result.content[0].text
 ```
 
----
+***
 
 ## Environment Configuration
 
-```python
+```Python
 # settings.py — Pydantic BaseSettings
 from pydantic_settings import BaseSettings
 
@@ -504,7 +505,7 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-```bash
+```Shell
 # .env.example — commit this, not .env
 ENVIRONMENT=production
 SECRET_KEY=          # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -515,3 +516,4 @@ LLM_MODEL=claude-sonnet-4-6
 WORKER_CONCURRENCY=3
 SESSION_TTL_MINUTES=150
 ```
+

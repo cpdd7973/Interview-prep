@@ -120,6 +120,7 @@ def schedule_interview_node(state: InterviewState) -> Dict[str, Any]:
                 candidate_email=candidate_email,
                 candidate_name=candidate_name,
                 job_role=job_role,
+                job_description=state.get("job_description", ""),
                 company=state.get("company", "Unknown"),
                 interviewer_designation=state.get("interviewer_designation", "AI"),
                 scheduled_at=scheduled_at,

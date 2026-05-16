@@ -174,6 +174,7 @@ async def schedule_interview(interview_data: dict, user=Depends(get_current_user
             "candidate_name": interview_data.get("candidate_name", "Unknown"),
             "candidate_email": interview_data.get("candidate_email", ""),
             "job_role": interview_data.get("job_role", "Software Engineer"),
+            "job_description": interview_data.get("job_description", ""),
             "company": interview_data.get("company", "Sample Corp"),
             "interviewer_designation": interview_data.get(
                 "interviewer_designation", "Senior Engineer"
@@ -469,6 +470,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
             "candidate_name": session.candidate.name,
             "candidate_email": session.candidate.email,
             "job_role": session.job_role,
+            "job_description": session.job_description,
             "company": session.company,
             "interviewer_designation": session.interviewer_designation,
             "scheduled_at_iso": (
@@ -488,6 +490,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
 
     candidate_name = session_data["candidate_name"]
     job_role = session_data["job_role"]
+    job_description = session_data.get("job_description")
     company = session_data["company"]
     interviewer_designation = session_data["interviewer_designation"]
 
@@ -514,9 +517,10 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
 
     chat_state: InterviewState = {
         "room_id": room_id,
-        "candidate_email": session_data["candidate_email"],
         "candidate_name": candidate_name,
+        "candidate_email": session_data["candidate_email"],
         "job_role": job_role,
+        "job_description": job_description,
         "company": company,
         "interviewer_designation": interviewer_designation,
         "scheduled_at": session_data["scheduled_at_iso"],

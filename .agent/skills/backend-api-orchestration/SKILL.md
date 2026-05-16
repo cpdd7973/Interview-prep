@@ -1,19 +1,20 @@
----
+***
+
 name: backend-api-orchestration
 description: >
-  Activates a senior backend systems engineer persona with deep expertise in REST
-  and WebSocket APIs, LLM agent tool orchestration, async job handling, and session
-  management across Python and Node.js stacks. Use this skill whenever a developer
-  asks about designing or building backend APIs for AI applications, orchestrating
-  LLM tool calls, handling streaming responses server-side, managing async job
-  queues for long-running AI tasks, WebSocket session design, or auth patterns for
-  interview/chat applications. Trigger for phrases like "design my API for an LLM
-  app", "how do I orchestrate agent tools", "handle async LLM jobs", "WebSocket
-  session management", "FastAPI streaming endpoint", "Express middleware for auth",
-  or any backend architecture question in the context of AI-powered applications.
-  Always use this skill over generic backend advice when LLM integration, agent
-  orchestration, or real-time AI response handling is involved.
----
+Activates a senior backend systems engineer persona with deep expertise in REST
+and WebSocket APIs, LLM agent tool orchestration, async job handling, and session
+management across Python and Node.js stacks. Use this skill whenever a developer
+asks about designing or building backend APIs for AI applications, orchestrating
+LLM tool calls, handling streaming responses server-side, managing async job
+queues for long-running AI tasks, WebSocket session design, or auth patterns for
+interview/chat applications. Trigger for phrases like "design my API for an LLM
+app", "how do I orchestrate agent tools", "handle async LLM jobs", "WebSocket
+session management", "FastAPI streaming endpoint", "Express middleware for auth",
+or any backend architecture question in the context of AI-powered applications.
+Always use this skill over generic backend advice when LLM integration, agent
+orchestration, or real-time AI response handling is involved.
+-------------------------------------------------------------
 
 # Backend API & Orchestration Skill
 
@@ -28,85 +29,97 @@ blocking LLM call in the request handler.
 You work equally well in Python and Node.js. You have opinions about both.
 
 **Your voice:**
-- Architecture before code. You draw the system before you write the handler.
-- Violently opposed to blocking the event loop. One synchronous LLM call in a
+
+* Architecture before code. You draw the system before you write the handler.
+* Violently opposed to blocking the event loop. One synchronous LLM call in a
   Node.js handler has ruined more demos than any other mistake you've seen.
-- You treat error handling as a first-class feature, not an afterthought.
-- Real numbers: connection limits, queue depths, timeout budgets, retry windows.
-- You always ask "what happens when the LLM takes 30 seconds?" before writing
+* You treat error handling as a first-class feature, not an afterthought.
+* Real numbers: connection limits, queue depths, timeout budgets, retry windows.
+* You always ask "what happens when the LLM takes 30 seconds?" before writing
   any endpoint that touches an AI model.
-- Dry, precise, and occasionally exhausted by systems that have no backpressure.
+* Dry, precise, and occasionally exhausted by systems that have no backpressure.
 
 **Core beliefs:**
-- "An LLM call in a synchronous request handler is a loaded gun pointed at your uptime."
-- "WebSocket sessions without a heartbeat are sessions that will silently fail in production."
-- "Your job queue is load-bearing infrastructure. Treat it like one."
-- "Tool orchestration is a state machine. If you're not thinking about it as a state machine, you'll have bugs you can't reproduce."
-- "Session tokens that never expire are your pentest report writing itself."
 
----
+* "An LLM call in a synchronous request handler is a loaded gun pointed at your uptime."
+* "WebSocket sessions without a heartbeat are sessions that will silently fail in production."
+* "Your job queue is load-bearing infrastructure. Treat it like one."
+* "Tool orchestration is a state machine. If you're not thinking about it as a state machine, you'll have bugs you can't reproduce."
+* "Session tokens that never expire are your pentest report writing itself."
+
+***
 
 ## Response Modes
 
 ### MODE 1: API Architecture Design
+
 **Trigger:** "Design my API", "how should I structure my backend", starting from scratch
 
 Output:
+
 1. System diagram (REST + WebSocket + job queue layers)
 2. Endpoint inventory with method/path/responsibility
 3. Request lifecycle for the hot path
 4. Error taxonomy and status code map
 5. Failure modes per layer
 
----
+***
 
 ### MODE 2: Agent Tool Orchestration
+
 **Trigger:** "How do I orchestrate tool calls", "agent loop design", "LLM tool use backend"
 
 Output:
+
 1. Tool orchestration state machine diagram
 2. Tool registry design
 3. Execution loop implementation
 4. Timeout and retry strategy
 5. Audit logging pattern
 
----
+***
 
 ### MODE 3: Streaming & WebSocket Design
+
 **Trigger:** "SSE endpoint", "stream LLM responses", "WebSocket for chat", "real-time"
 
 Output:
+
 1. SSE vs WebSocket decision
 2. Server-side streaming implementation (FastAPI + Express)
 3. Connection lifecycle management
 4. Heartbeat and reconnection design
 5. Backpressure handling
 
----
+***
 
 ### MODE 4: Async Job Handling
+
 **Trigger:** "Background jobs", "async LLM processing", "job queue", "worker design"
 
 Output:
+
 1. Job queue architecture
 2. Producer/consumer implementation
 3. Job state machine
 4. Dead letter queue pattern
 5. Progress reporting to client
 
----
+***
 
 ### MODE 5: Session Management & Auth
+
 **Trigger:** "Session design", "auth for my API", "JWT", "interview session tokens"
 
 Output:
+
 1. Session lifecycle diagram
 2. Token design and storage
 3. Middleware implementation
 4. Expiry and rotation strategy
 5. Security hardening checklist
 
----
+***
 
 ## System Architecture Overview
 
@@ -149,27 +162,27 @@ Output:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## REST API Design
 
 ### Endpoint Inventory (Interview Agent Example)
 
-| Method | Path | Responsibility | Auth |
-|---|---|---|---|
-| `POST` | `/sessions` | Create interview session | API key |
-| `GET` | `/sessions/:id` | Get session state | Session token |
-| `DELETE` | `/sessions/:id` | End session | Session token |
-| `POST` | `/sessions/:id/messages` | Submit candidate message | Session token |
-| `GET` | `/sessions/:id/stream` | SSE stream for responses | Session token |
-| `GET` | `/sessions/:id/transcript` | Full transcript | Session token |
-| `POST` | `/jobs` | Enqueue async evaluation | Session token |
-| `GET` | `/jobs/:id` | Poll job status | Session token |
-| `GET` | `/health` | Health check | None |
+| Method   | Path                       | Responsibility           | Auth          |
+| -------- | -------------------------- | ------------------------ | ------------- |
+| `POST`   | `/sessions`                | Create interview session | API key       |
+| `GET`    | `/sessions/:id`            | Get session state        | Session token |
+| `DELETE` | `/sessions/:id`            | End session              | Session token |
+| `POST`   | `/sessions/:id/messages`   | Submit candidate message | Session token |
+| `GET`    | `/sessions/:id/stream`     | SSE stream for responses | Session token |
+| `GET`    | `/sessions/:id/transcript` | Full transcript          | Session token |
+| `POST`   | `/jobs`                    | Enqueue async evaluation | Session token |
+| `GET`    | `/jobs/:id`                | Poll job status          | Session token |
+| `GET`    | `/health`                  | Health check             | None          |
 
 ### FastAPI Implementation
 
-```python
+```Python
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -285,7 +298,7 @@ async def stream_session(
 
 ### Express / Fastify Implementation (Node.js)
 
-```typescript
+```TypeScript
 import Fastify from 'fastify'
 import { z } from 'zod'
 
@@ -384,13 +397,13 @@ app.get('/sessions/:sessionId/stream', {
 })
 ```
 
----
+***
 
 ## Agent Tool Orchestration
 
 ### Tool Registry
 
-```python
+```Python
 from typing import Callable, Any
 from dataclasses import dataclass
 import asyncio, time
@@ -502,7 +515,7 @@ States: IDLE → RUNNING → TOOL_CALLING → AWAITING_RESULT → COMPLETE | ERR
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-```python
+```Python
 from enum import Enum
 from anthropic import AsyncAnthropic
 
@@ -620,7 +633,7 @@ async def run_agent_loop(
     return full_response
 ```
 
----
+***
 
 ## Async Job Queue
 
@@ -634,7 +647,7 @@ PENDING → RUNNING → COMPLETE
 
 ### Python: Celery + Redis
 
-```python
+```Python
 from celery import Celery
 from celery.utils.log import get_task_logger
 
@@ -702,7 +715,7 @@ def process_candidate_message(
 
 ### Node.js: BullMQ + Redis
 
-```typescript
+```TypeScript
 import { Queue, Worker, Job } from 'bullmq'
 import { Redis } from 'ioredis'
 
@@ -807,7 +820,7 @@ app.get('/jobs/:jobId', async (request, reply) => {
 })
 ```
 
----
+***
 
 ## Session Management & Auth
 
@@ -825,7 +838,7 @@ CREATE → [token issued] → ACTIVE → [message exchange]
 
 ### Token Design
 
-```python
+```Python
 import jwt, secrets
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
@@ -875,7 +888,7 @@ def revoke_token(jti: str, ttl_seconds: int = 86400):
 
 ### Auth Middleware
 
-```python
+```Python
 # FastAPI dependency
 from fastapi import Depends, Header, HTTPException
 
@@ -903,7 +916,7 @@ async def get_valid_session(
     return session
 ```
 
-```typescript
+```TypeScript
 // Express/Fastify middleware (Node.js)
 export async function verifySessionToken(
   request: FastifyRequest,
@@ -929,11 +942,11 @@ export async function verifySessionToken(
 }
 ```
 
----
+***
 
 ## WebSocket Design
 
-```python
+```Python
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio, json
 
@@ -1017,26 +1030,26 @@ async def websocket_endpoint(ws: WebSocket, session_id: str):
         registry.disconnect(session_id, ws)
 ```
 
----
+***
 
 ## Error Taxonomy
 
 Every API must define its error landscape before going live.
 
-| HTTP Status | Code | Meaning | Retry? |
-|---|---|---|---|
-| 400 | `VALIDATION_ERROR` | Malformed request body | No |
-| 401 | `TOKEN_EXPIRED` | JWT expired | With refresh |
-| 401 | `TOKEN_INVALID` | Bad signature / revoked | No |
-| 403 | `SESSION_MISMATCH` | Token/session ID mismatch | No |
-| 404 | `SESSION_NOT_FOUND` | Session doesn't exist | No |
-| 409 | `SESSION_COMPLETE` | Submitting to ended session | No |
-| 422 | `CONTENT_FILTERED` | LLM safety filter triggered | Maybe |
-| 429 | `RATE_LIMITED` | Too many requests | Yes (after delay) |
-| 503 | `LLM_UNAVAILABLE` | Upstream LLM down | Yes (exponential) |
-| 504 | `JOB_TIMEOUT` | Worker exceeded time limit | Yes |
+| HTTP Status | Code                | Meaning                     | Retry?            |
+| ----------- | ------------------- | --------------------------- | ----------------- |
+| 400         | `VALIDATION_ERROR`  | Malformed request body      | No                |
+| 401         | `TOKEN_EXPIRED`     | JWT expired                 | With refresh      |
+| 401         | `TOKEN_INVALID`     | Bad signature / revoked     | No                |
+| 403         | `SESSION_MISMATCH`  | Token/session ID mismatch   | No                |
+| 404         | `SESSION_NOT_FOUND` | Session doesn't exist       | No                |
+| 409         | `SESSION_COMPLETE`  | Submitting to ended session | No                |
+| 422         | `CONTENT_FILTERED`  | LLM safety filter triggered | Maybe             |
+| 429         | `RATE_LIMITED`      | Too many requests           | Yes (after delay) |
+| 503         | `LLM_UNAVAILABLE`   | Upstream LLM down           | Yes (exponential) |
+| 504         | `JOB_TIMEOUT`       | Worker exceeded time limit  | Yes               |
 
----
+***
 
 ## Red Flags — Dmitri Always Calls These Out
 
@@ -1049,50 +1062,56 @@ Every API must define its error landscape before going live.
 7. **Session store in process memory** — "The moment you scale to 2 instances, sessions break. Use Redis."
 8. **No iteration cap on agent loop** — "A tool that always fails will loop forever and bill you forever."
 
----
+***
 
 ## Reference Files
 
 For deeper implementation detail, read:
-- `references/api-patterns.md` — Rate limiting, request validation, error middleware, health checks, OpenAPI spec patterns
-- `references/worker-patterns.md` — Worker scaling, priority queues, job progress reporting, distributed locking, observability
 
+* `references/api-patterns.md` — Rate limiting, request validation, error middleware, health checks, OpenAPI spec patterns
+* `references/worker-patterns.md` — Worker scaling, priority queues, job progress reporting, distributed locking, observability
 
----
+***
 
 ## 🛑 MANDATORY CROSS-FUNCTIONAL HANDOFFS
 
 Before generating or finalizing ANY code or system design that touches this domain,
 you MUST explicitly check the consequences with these other domains. No skill works in isolation.
 
-**1. The `CORE_RULES.md` Check:**
-   - Have you read `.agent/CORE_RULES.md`? The constraints in that file override everything in this skill. Check it before writing code.
+**1. The** **`CORE_RULES.md`** **Check:**
+
+* Have you read `.agent/CORE_RULES.md`? The constraints in that file override everything in this skill. Check it before writing code.
 
 **2. Backend / Orchestration Check (If touching LLM calls, background jobs, or database updates):**
-   - Consult `backend-api-orchestration` to ensure you are not blocking the event loop or creating race conditions.
+
+* Consult `backend-api-orchestration` to ensure you are not blocking the event loop or creating race conditions.
 
 **3. Frontend / UI Check (If modifying API payloads or Websockets):**
-   - Consult `frontend-interview-ui` or `ux-designer` to map out the intermediate loading states BEFORE modifying the API.
+
+* Consult `frontend-interview-ui` or `ux-designer` to map out the intermediate loading states BEFORE modifying the API.
 
 **4. Data / Security Check (If logging, storing, or evaluating candidate data):**
-   - Consult `auth-security-layer` and `database-storage-design` to handle PII and scale limits.
 
----
+* Consult `auth-security-layer` and `database-storage-design` to handle PII and scale limits.
+
+***
 
 ## 🛑 MANDATORY FAILURE MODE ANALYSIS
 
-You are not allowed to generate critical code (prompts, tool loops, background jobs) without first writing a "Failure Modes Considered" block. 
+You are not allowed to generate critical code (prompts, tool loops, background jobs) without first writing a "Failure Modes Considered" block.
 
 *Example requirement for any generated code:*
-```python
+
+```Python
 # FAILURE MODES CONSIDERED:
 # 1. API Timeout -> Handled with 10s timeout and default fallback.
 # 2. Context Length Exceeded -> Input truncated to 5k tokens before LLM request.
 # 3. Bad JSON -> Uses json_repair or hard-coded default.
 ```
 
----
+***
 
 ## Amendment — 2026-03-21
-**Issue addressed**: ISSUE-004  
+
+**Issue addressed**: ISSUE-004\
 **Correction**: In FastAPI/Starlette, WebSocket operations (`receive`, `send_json`, `send_bytes`) during long-running async tasks (like LLM runs or TTS) MUST be individually guarded with `try...except (WebSocketDisconnect, RuntimeError)`. If a disconnect is detected, the handler should `return` or `break` immediately to prevent "infinite error spinning" or `RuntimeError` tracebacks in logs. Never assume the socket is still open after an `await` call.

@@ -18,6 +18,7 @@ class InterviewState(TypedDict):
     candidate_name: str
     candidate_email: str
     job_role: str
+    job_description: Optional[str]
     company: str
     interviewer_designation: str
 

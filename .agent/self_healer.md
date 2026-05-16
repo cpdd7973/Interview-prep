@@ -13,15 +13,16 @@ OR when a fix was applied but the same symptom reappears in the next prompt.
 3. **Patch the skill** — append an "Amendment" section at the bottom of the
    relevant SKILL.md with the corrected guidance. Do NOT delete original content.
    Format:
+
 ```
    ## Amendment — {date}
    **Issue addressed**: ISSUE-XXX  
    **Correction**: {what was wrong and what the right approach is}
 ```
 
-4. **Update the issue log** — set `Self-heal triggered: Yes` and note the skill patched.
+1. **Update the issue log** — set `Self-heal triggered: Yes` and note the skill patched.
 
-5. **Re-attempt the fix** using the patched skill guidance.
+2. **Re-attempt the fix** using the patched skill guidance.
 
 ## Pre-Fix Checklist (MANDATORY before every code change)
 
@@ -34,3 +35,4 @@ Before writing ANY fix, the agent MUST answer these questions:
 3. **Exit condition check:** "After my change, does every code path still reach a safe terminal state?" — For state flags like `isAISpeaking`, verify every branch sets it to `false` eventually, including error paths and API failures.
 4. **Reliability check:** "Am I introducing a dependency on an unreliable API in a critical path?" — If so, add a hard timeout safety net.
 5. **Regression check:** "Before my fix, what happened when the user did X? After my fix, does that SAME flow still work?" — Document the before/after explicitly.
+
