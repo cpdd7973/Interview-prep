@@ -1004,7 +1004,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             logger.info(
                                 "🚀 Starting post-interview pipeline (evaluate → report → email)"
                             )
-                            await interview_graph.ainvoke(state)
+                            result = await interview_graph.ainvoke(state)
 
                             session = (
                                 db.query(InterviewSession)
@@ -1012,12 +1012,51 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                                 .first()
                             )
                             if session:
-                                session.report_generated_at = datetime.utcnow()
-                                session.status = SessionStatus.COMPLETED
+                                result_status = result.get("status")
+                                if result_status == "REPORTED":
+                                    session.report_generated_at = datetime.utcnow()
+                                    session.status = SessionStatus.COMPLETED
+                                    # email_failed is a secondary-delivery issue,
+                                    # not a pipeline failure -- record it without
+                                    # downgrading the overall status.
+                                    session.pipeline_error = (
+                                        result.get("error")
+                                        if result.get("email_failed")
+                                        else None
+                                    )
+                                    logger.info(
+                                        f"✅ Post-interview pipeline completed for {room_id}"
+                                    )
+                                elif result_status == "EVALUATION_FAILED":
+                                    session.status = SessionStatus.EVALUATION_FAILED
+                                    session.pipeline_error = result.get("error")
+                                    session.report_retry_count = (
+                                        session.report_retry_count or 0
+                                    ) + 1
+                                    logger.error(
+                                        f"❌ Evaluation failed for {room_id}: {result.get('error')}"
+                                    )
+                                elif result_status == "REPORT_FAILED":
+                                    session.status = SessionStatus.REPORT_FAILED
+                                    session.pipeline_error = result.get("error")
+                                    session.report_retry_count = (
+                                        session.report_retry_count or 0
+                                    ) + 1
+                                    logger.error(
+                                        f"❌ Report generation failed for {room_id}: {result.get('error')}"
+                                    )
+                                else:
+                                    # Graph ended in an unexpected state -- don't
+                                    # silently mark it complete.
+                                    session.status = SessionStatus.EVALUATION_FAILED
+                                    session.pipeline_error = (
+                                        f"Pipeline ended in unexpected status: {result_status}"
+                                    )
+                                    logger.error(
+                                        f"❌ Post-interview pipeline for {room_id} ended in "
+                                        f"unexpected status: {result_status}"
+                                    )
                                 db.commit()
-                            logger.info(
-                                f"✅ Post-interview pipeline completed for {room_id}"
-                            )
                         except Exception as pipe_err:
                             logger.error(
                                 f"❌ Post-interview pipeline failed: {pipe_err}",
@@ -1032,7 +1071,8 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                                 session.report_retry_count = (
                                     getattr(session, "report_retry_count", 0) + 1
                                 )
-                                session.status = SessionStatus.ACTIVE
+                                session.status = SessionStatus.EVALUATION_FAILED
+                                session.pipeline_error = str(pipe_err)
                                 db.commit()
                         finally:
                             db.close()

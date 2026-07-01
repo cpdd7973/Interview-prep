@@ -102,6 +102,16 @@ def report_node(state: InterviewState) -> Dict[str, Any]:
                 logger.info(
                     "Report generated but email delivery failed. PDF saved locally."
                 )
+                # The PDF is the primary deliverable and did generate --
+                # don't downgrade overall status for a secondary delivery
+                # failure, but flag it so the caller can record it.
+                return {
+                    **state,
+                    "status": "REPORTED",
+                    "report_path": pdf_path,
+                    "email_failed": True,
+                    "error": f"Report generated but email delivery failed: {email_resp.get('error')}",
+                }
             else:
                 logger.info(f"✅ Report emailed to {admin_email}")
         else:
@@ -111,4 +121,4 @@ def report_node(state: InterviewState) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"❌ Report agent failed: {e}", exc_info=True)
-        return {**state, "error": f"Report failed: {str(e)}"}
+        return {**state, "status": "REPORT_FAILED", "error": f"Report failed: {str(e)}"}

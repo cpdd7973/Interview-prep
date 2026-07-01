@@ -85,7 +85,11 @@ async def evaluator_node(state: InterviewState) -> Dict[str, Any]:
 
     if not eval_resp.get("success"):
         logger.error(f"❌ Evaluator failed: {eval_resp.get('error')}")
-        return {"error": f"Evaluation failed: {eval_resp.get('error')}"}
+        return {
+            "status": "EVALUATION_FAILED",
+            "error": f"Evaluation failed: {eval_resp.get('error')}",
+            "evaluation": None,
+        }
 
     evaluation_data = {
         "scores": eval_resp.get("scores", {}),

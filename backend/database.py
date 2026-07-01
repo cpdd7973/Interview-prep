@@ -41,6 +41,8 @@ class SessionStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
     EXPIRED = "EXPIRED"
     CANCELLED = "CANCELLED"
+    EVALUATION_FAILED = "EVALUATION_FAILED"
+    REPORT_FAILED = "REPORT_FAILED"
 
 
 class QuestionDifficulty(str, enum.Enum):
@@ -143,6 +145,9 @@ class InterviewSession(Base):
     topics_covered = Column(JSON, nullable=True)
     current_phase = Column(String(20), nullable=True)
     interview_started_at = Column(DateTime, nullable=True)
+
+    # Post-interview pipeline failure tracking (evaluation/report generation)
+    pipeline_error = Column(Text, nullable=True)
 
     # Relationships
     candidate = relationship("Candidate", back_populates="sessions")
