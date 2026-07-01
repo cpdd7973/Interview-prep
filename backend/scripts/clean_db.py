@@ -1,8 +1,13 @@
+"""
+Local dev utility: wipes all interview/evaluation/transcript data.
+Destructive. Not shipped in the Docker image (see backend/.dockerignore).
+"""
+
 import sys
 import os
 
-# Add backend directory to path so we can import modules
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# backend/ (parent of this scripts/ dir) so `database` resolves
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import SessionLocal, InterviewSession, Evaluation, TranscriptChunk
 
@@ -32,4 +37,11 @@ def clean_database():
 
 
 if __name__ == "__main__":
+    confirm = input(
+        "This permanently deletes ALL interview sessions, transcripts, and "
+        "evaluations. Type YES to confirm: "
+    )
+    if confirm != "YES":
+        print("Aborted.")
+        sys.exit(1)
     clean_database()
