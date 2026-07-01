@@ -157,7 +157,11 @@ const InterviewRoom = () => {
     if (forceCompleted) return 'COMPLETED';
 
     if (status === 'ACTIVE' || status === 'DISCONNECTED') {
-      if (finished_at) return 'COMPLETED';
+      // Don't show the finished screen while the AI's final response is
+      // still playing -- finished_at is set in the DB as soon as the LLM
+      // decides to end, well before TTS playback actually completes, and
+      // this polling-derived status update can otherwise race ahead of it.
+      if (finished_at && !isAISpeaking) return 'COMPLETED';
       return 'ACTIVE'; // Treat DISCONNECTED as ACTIVE for the room UI to allow reconnections
     }
     if (status === 'COMPLETED') return 'COMPLETED';

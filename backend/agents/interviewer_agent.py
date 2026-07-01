@@ -15,6 +15,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from agents.state import InterviewState
 from utils.groq_client import llm_client
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +81,18 @@ COVERAGE SO FAR:
 TIME CONTEXT:
 - Interview started: {interview_start_time}
 - Elapsed time: {elapsed_minutes} minutes
-- MINIMUM interview duration: 30 minutes
+- MINIMUM interview duration: {min_duration_minutes} minutes
 
 ENDING RULES:
-- You MUST NOT use "end_interview" before 30 minutes have elapsed.
+- You MUST NOT use "end_interview" before {min_duration_minutes} minutes have elapsed.
 - You MUST NOT use "end_interview" if major skill categories still have uncovered topics.
 - You SHOULD use "end_interview" when BOTH conditions are met:
-  (a) At least 30 minutes have elapsed, AND
+  (a) At least {min_duration_minutes} minutes have elapsed, AND
   (b) You have adequately covered foundation, core, and secondary skills.
 - EXCEPTION: If the candidate explicitly asks to stop or end the interview, you may
   end early regardless of time.
+- NOTE: These rules are also enforced in code. Attempting to end early will be
+  rejected and you will be asked to continue instead.
 
 RESPONSE FORMAT — respond with a SINGLE valid JSON object, no markdown:
 {{
@@ -110,6 +113,48 @@ STYLE:
 
 WARNING: Output NOTHING BUT valid JSON. No ```json markdown blocks.
 """
+
+# ---------------------------------------------------------------------------
+# Corrective re-prompt — used ONLY when the hard end-interview gate (see
+# _is_end_interview_premature) overrides a premature LLM "end_interview"
+# decision. Keeps the candidate-facing response natural instead of a jarring
+# non-sequitur, and hard-forbids ending again this turn.
+# ---------------------------------------------------------------------------
+END_OVERRIDE_CORRECTION_PROMPT = """
+You are the same technical interviewer for {company}, interviewing {candidate_name}
+for {job_role}.
+
+You just attempted to end the interview, but it CANNOT end yet:
+- Minimum required duration: {min_duration} minutes (only {elapsed_minutes} have elapsed)
+- Skills still needing coverage: {topics_remaining}
+
+Your previous drafted response (written as if this were the final turn) was:
+"{original_spoken_response}"
+
+INSTRUCTIONS:
+- Do NOT end the interview this turn. "action" MUST be "follow_up" or "next_question" --
+  NEVER "end_interview", no matter what the candidate just said.
+- If the previous drafted response above already answers the candidate's last message well,
+  reuse that part of it, but remove any goodbye/closing/wrap-up language.
+- Then continue the interview naturally by asking a new question on one of the remaining
+  topics listed above. Do not mention that a correction happened.
+- Keep it conversational and under 4 sentences, consistent with normal interview style.
+
+RESPONSE FORMAT — respond with a SINGLE valid JSON object, no markdown:
+{{
+  "action": "<follow_up|next_question>",
+  "spoken_response": "<your corrected conversational response>"
+}}
+
+WARNING: Output NOTHING but valid JSON. No ```json markdown blocks.
+"""
+
+# Deterministic last-resort line -- used only if BOTH the original LLM call and the
+# corrective re-prompt try to end early (or the corrective call fails outright).
+FALLBACK_TRANSITION_TEMPLATE = (
+    "Thanks for that. Before we wrap up, I'd like to cover a bit more ground -- "
+    "let's talk about {topic}. Could you walk me through your experience with it?"
+)
 
 
 def extract_json(text: str) -> dict:
@@ -220,6 +265,97 @@ def calculate_elapsed_minutes(interview_started_at: Optional[str]) -> float:
         return 0.0
 
 
+def _is_end_interview_premature(
+    elapsed_minutes: float, phase: str, min_duration_minutes: int
+) -> bool:
+    """
+    Hard code-level gate -- backstop for the prompt's ENDING RULES, which the
+    LLM is not guaranteed to obey. Confirmed via a real session log: the
+    model chose "end_interview" at 9.9 elapsed minutes (min=30) with 6
+    skill topics still uncovered.
+
+    `phase` MUST be the code-computed determine_phase() result, never the
+    LLM's self-reported phase -- trusting the LLM's own judgment here is
+    exactly what this gate exists to not do.
+
+    Does not apply to the candidate's explicit "please stop" path
+    (interviewer_node, checked earlier) -- that path returns before this
+    function is ever reached.
+    """
+    if elapsed_minutes < min_duration_minutes:
+        return True
+    if phase != "secondary":
+        return True
+    return False
+
+
+async def _override_premature_end(
+    conversation_messages: List[Any],
+    state: InterviewState,
+    original_spoken_response: str,
+    topics_remaining: List[str],
+    elapsed_minutes: float,
+    min_duration_minutes: int,
+) -> Dict[str, Any]:
+    """
+    Called when the LLM chose action="end_interview" before
+    _is_end_interview_premature allows it. Makes ONE corrective LLM call
+    instructing the model to continue instead, using its own rejected
+    closing response as context so the continuation reads naturally.
+
+    FAILURE MODES CONSIDERED:
+    - Corrective call raises (timeout/network/API error) -> caught, falls
+      back to a deterministic transition line. No further retry.
+    - Corrective call returns malformed/unparseable JSON -> extract_json's
+      regex fallback may return unusable text; guarded by the sanity check
+      below before trusting it.
+    - Corrective call itself returns action="end_interview" again -> not
+      honored; falls back to the deterministic transition line instead.
+    """
+    correction_prompt = END_OVERRIDE_CORRECTION_PROMPT.format(
+        company=state.get("company", "our company"),
+        candidate_name=state.get("candidate_name", "the candidate"),
+        job_role=state.get("job_role", "this role"),
+        elapsed_minutes=f"{elapsed_minutes:.1f}",
+        min_duration=min_duration_minutes,
+        topics_remaining=(
+            ", ".join(topics_remaining) if topics_remaining else "a few more areas"
+        ),
+        original_spoken_response=original_spoken_response,
+    )
+    corrective_messages = [SystemMessage(content=correction_prompt)] + conversation_messages
+
+    try:
+        corrective_text = await llm_client.invoke_async(corrective_messages)
+        corrected = extract_json(corrective_text)
+        corrected_action = corrected.get("action", "next_question")
+        corrected_response = corrected.get("spoken_response")
+
+        usable = (
+            corrected_action != "end_interview"
+            and corrected_response
+            and 0 < len(corrected_response) <= 1000
+        )
+        if usable:
+            logger.info("✅ Corrective re-prompt succeeded; interview will continue.")
+            return {"spoken_response": corrected_response}
+
+        logger.error(
+            f"⛔ Corrective re-prompt unusable (action={corrected_action}, "
+            f"response_len={len(corrected_response) if corrected_response else 0}). "
+            "Using deterministic fallback."
+        )
+    except Exception as e:
+        logger.error(
+            f"⛔ Corrective re-prompt LLM call failed: {e}. Using deterministic fallback."
+        )
+
+    fallback_topic = (
+        topics_remaining[0] if topics_remaining else "a few more areas relevant to the role"
+    )
+    return {"spoken_response": FALLBACK_TRANSITION_TEMPLATE.format(topic=fallback_topic)}
+
+
 async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
     """
     LangGraph node for conducting JD-aware interview conversation.
@@ -290,6 +426,7 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         current_phase=current_phase,
         interview_start_time=state.get("interview_started_at", "just now"),
         elapsed_minutes=f"{elapsed_minutes:.1f}",
+        min_duration_minutes=settings.min_interview_duration_minutes,
     )
 
     # Inject system prompt at the beginning of the message history
@@ -319,6 +456,14 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
             new_topics.append(topic)
             topics_covered.append(topic)
 
+        # Recompute deterministically, post-turn, for the end-interview gate --
+        # do not reuse the LLM's self-reported phase here, since that is
+        # exactly what caused the premature end_interview decision.
+        topics_remaining_now = [
+            s for s in all_skills if s.lower() not in [t.lower() for t in topics_covered]
+        ]
+        phase_now = determine_phase(topics_covered, skill_plan)
+
         # Track phase from LLM response
         reported_phase = decision.get("current_phase", current_phase)
 
@@ -339,8 +484,28 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
             result["skill_plan"] = skill_plan
 
         if action == "end_interview":
-            logger.info("LLM decided to end the interview.")
-            result["status"] = "COMPLETED"
+            if _is_end_interview_premature(
+                elapsed_minutes, phase_now, settings.min_interview_duration_minutes
+            ):
+                logger.warning(
+                    f"⛔ Blocked premature end_interview -- elapsed={elapsed_minutes:.1f}min "
+                    f"(min={settings.min_interview_duration_minutes}), phase={phase_now}, "
+                    f"topics_remaining={len(topics_remaining_now)}"
+                )
+                override = await _override_premature_end(
+                    conversation_messages=messages,
+                    state=state,
+                    original_spoken_response=spoken_response,
+                    topics_remaining=topics_remaining_now,
+                    elapsed_minutes=elapsed_minutes,
+                    min_duration_minutes=settings.min_interview_duration_minutes,
+                )
+                result["messages"] = [AIMessage(content=override["spoken_response"])]
+                result["current_phase"] = phase_now
+                # status intentionally left unset -> stays ACTIVE, interview continues
+            else:
+                logger.info("LLM decided to end the interview.")
+                result["status"] = "COMPLETED"
 
         return result
 
