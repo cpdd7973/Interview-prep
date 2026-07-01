@@ -532,6 +532,11 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         "current_question_id": current_q_id,
         "evaluation": None,
         "error": None,
+        # JD-aware interview tracking
+        "skill_plan": None,
+        "topics_covered": [],
+        "current_phase": "introduction",
+        "interview_started_at": datetime.utcnow().isoformat(),
     }
 
     try:
@@ -616,6 +621,13 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         chat_state["questions_asked"].extend(
                             agent_result["questions_asked"]
                         )
+                    # JD-aware state propagation
+                    if "skill_plan" in agent_result:
+                        chat_state["skill_plan"] = agent_result["skill_plan"]
+                    if "topics_covered" in agent_result:
+                        chat_state["topics_covered"] = agent_result["topics_covered"]
+                    if "current_phase" in agent_result:
+                        chat_state["current_phase"] = agent_result["current_phase"]
 
                     initial_response = agent_result["messages"][-1].content
                 except Exception as agent_err:
@@ -838,6 +850,13 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                     chat_state["questions_asked"].extend(
                         agent_result["questions_asked"]
                     )
+                # JD-aware state propagation
+                if "skill_plan" in agent_result:
+                    chat_state["skill_plan"] = agent_result["skill_plan"]
+                if "topics_covered" in agent_result:
+                    chat_state["topics_covered"] = agent_result["topics_covered"]
+                if "current_phase" in agent_result:
+                    chat_state["current_phase"] = agent_result["current_phase"]
 
                 ai_response = agent_result["messages"][-1].content
                 logger.info(f"[AI]: {ai_response}")
