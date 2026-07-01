@@ -209,7 +209,12 @@ def calculate_elapsed_minutes(interview_started_at: Optional[str]) -> float:
         return 0.0
     try:
         start = datetime.fromisoformat(interview_started_at.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
+        # Normalize to naive UTC — start may be naive (our own naive
+        # utcnow().isoformat() writes) or aware (a "Z"-suffixed string),
+        # and comparing naive vs. aware datetimes raises TypeError.
+        if start.tzinfo is not None:
+            start = start.astimezone(timezone.utc).replace(tzinfo=None)
+        now = datetime.utcnow()
         return (now - start).total_seconds() / 60.0
     except Exception:
         return 0.0

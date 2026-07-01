@@ -81,6 +81,7 @@ class SessionMCPServer:
             "create_session": self.create_session,
             "get_session": self.get_session,
             "update_status": self.update_status,
+            "update_interview_state": self.update_interview_state,
             "arm_scheduler_job": self.arm_scheduler_job,
             "cancel_scheduler_job": self.cancel_scheduler_job,
             "log_transcript_chunk": self.log_transcript_chunk,
@@ -298,6 +299,49 @@ class SessionMCPServer:
         except Exception as e:
             db.rollback()
             logger.error(f"❌ Error updating status for {room_id}: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            db.close()
+
+    def update_interview_state(
+        self,
+        room_id: str,
+        skill_plan: Optional[dict] = None,
+        topics_covered: Optional[list] = None,
+        current_phase: Optional[str] = None,
+        interview_started_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Persist JD-aware interview progress (skill plan, topic coverage,
+        phase, start time) so a WebSocket reconnect can restore it instead
+        of resetting it. Only fields explicitly passed are written.
+        """
+        db: Session = SessionLocal()
+        try:
+            session = (
+                db.query(InterviewSession)
+                .filter(InterviewSession.room_id == room_id)
+                .first()
+            )
+            if not session:
+                return {"success": False, "error": "Session not found"}
+
+            if skill_plan is not None:
+                session.skill_plan = skill_plan
+            if topics_covered is not None:
+                session.topics_covered = topics_covered
+            if current_phase is not None:
+                session.current_phase = current_phase
+            if interview_started_at is not None:
+                session.interview_started_at = datetime.fromisoformat(
+                    interview_started_at.replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+
+            db.commit()
+            return {"success": True, "room_id": room_id}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ Error updating interview state for {room_id}: {e}")
             return {"success": False, "error": str(e)}
         finally:
             db.close()

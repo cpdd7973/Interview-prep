@@ -137,6 +137,13 @@ class InterviewSession(Base):
     report_retry_count = Column(Integer, default=0)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
+    # JD-aware interview tracking — persisted so a WebSocket reconnect
+    # restores progress instead of resetting the skill plan/phase/timer.
+    skill_plan = Column(JSON, nullable=True)
+    topics_covered = Column(JSON, nullable=True)
+    current_phase = Column(String(20), nullable=True)
+    interview_started_at = Column(DateTime, nullable=True)
+
     # Relationships
     candidate = relationship("Candidate", back_populates="sessions")
     creator = relationship("User", back_populates="sessions", foreign_keys=[created_by])

@@ -502,6 +502,14 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 session.scheduled_at.isoformat() if session.scheduled_at else ""
             ),
             "daily_room_url": session.daily_room_url or "",
+            "skill_plan": session.skill_plan,
+            "topics_covered": session.topics_covered,
+            "current_phase": session.current_phase,
+            "interview_started_at": (
+                session.interview_started_at.isoformat()
+                if session.interview_started_at
+                else None
+            ),
         }
         db.close()
         return data
@@ -557,12 +565,23 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         "current_question_id": current_q_id,
         "evaluation": None,
         "error": None,
-        # JD-aware interview tracking
-        "skill_plan": None,
-        "topics_covered": [],
-        "current_phase": "introduction",
-        "interview_started_at": datetime.utcnow().isoformat(),
+        # JD-aware interview tracking — restored from the DB so a
+        # reconnect doesn't reset the skill plan/phase/30-min timer.
+        "skill_plan": session_data.get("skill_plan"),
+        "topics_covered": session_data.get("topics_covered") or [],
+        "current_phase": session_data.get("current_phase") or "introduction",
+        "interview_started_at": session_data.get("interview_started_at")
+        or datetime.utcnow().isoformat(),
     }
+
+    # Persist interview_started_at exactly once, on the very first connection
+    # for this room. Subsequent reconnects read it back instead of overwriting it.
+    if not session_data.get("interview_started_at"):
+        await asyncio.to_thread(
+            session_mcp.update_interview_state,
+            room_id=room_id,
+            interview_started_at=chat_state["interview_started_at"],
+        )
 
     try:
         # Wait for the frontend to signal it is ready before sending the initial greeting
@@ -647,12 +666,26 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             agent_result["questions_asked"]
                         )
                     # JD-aware state propagation
+                    jd_state_update = {}
                     if "skill_plan" in agent_result:
                         chat_state["skill_plan"] = agent_result["skill_plan"]
+                        jd_state_update["skill_plan"] = agent_result["skill_plan"]
                     if "topics_covered" in agent_result:
                         chat_state["topics_covered"] = agent_result["topics_covered"]
+                        jd_state_update["topics_covered"] = agent_result[
+                            "topics_covered"
+                        ]
                     if "current_phase" in agent_result:
                         chat_state["current_phase"] = agent_result["current_phase"]
+                        jd_state_update["current_phase"] = agent_result[
+                            "current_phase"
+                        ]
+                    if jd_state_update:
+                        await asyncio.to_thread(
+                            session_mcp.update_interview_state,
+                            room_id=room_id,
+                            **jd_state_update,
+                        )
 
                     initial_response = agent_result["messages"][-1].content
                 except Exception as agent_err:
@@ -879,12 +912,22 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         agent_result["questions_asked"]
                     )
                 # JD-aware state propagation
+                jd_state_update = {}
                 if "skill_plan" in agent_result:
                     chat_state["skill_plan"] = agent_result["skill_plan"]
+                    jd_state_update["skill_plan"] = agent_result["skill_plan"]
                 if "topics_covered" in agent_result:
                     chat_state["topics_covered"] = agent_result["topics_covered"]
+                    jd_state_update["topics_covered"] = agent_result["topics_covered"]
                 if "current_phase" in agent_result:
                     chat_state["current_phase"] = agent_result["current_phase"]
+                    jd_state_update["current_phase"] = agent_result["current_phase"]
+                if jd_state_update:
+                    await asyncio.to_thread(
+                        session_mcp.update_interview_state,
+                        room_id=room_id,
+                        **jd_state_update,
+                    )
 
                 ai_response = agent_result["messages"][-1].content
                 logger.info(f"[AI]: {ai_response}")
