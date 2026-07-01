@@ -96,7 +96,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -335,17 +335,35 @@ async def cancel_interview(room_id: str, user=Depends(get_current_user)):
 
 # Get transcript endpoint
 @app.get("/api/interviews/{room_id}/transcript")
-async def get_transcript(room_id: str):
+async def get_transcript(room_id: str, user=Depends(get_current_user)):
     """
-    Get full transcript for an interview.
+    Get full transcript for an interview. Only the creator can view it.
     """
+    from database import SessionLocal, InterviewSession
+
+    db = SessionLocal()
+    try:
+        session = (
+            db.query(InterviewSession)
+            .filter(InterviewSession.room_id == room_id)
+            .first()
+        )
+        if not session:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        if session.created_by != user.id:
+            raise HTTPException(
+                status_code=403, detail="You can only view your own interviews"
+            )
+    finally:
+        db.close()
+
     result = session_mcp.get_transcript(room_id)
     return result
 
 
 # Questions endpoints
 @app.get("/api/questions")
-async def get_questions(role: str = None):
+async def get_questions(role: str = None, user=Depends(get_current_user)):
     """Get questions by role."""
     from mcp_servers.question_bank_mcp import question_bank_mcp, GetQuestionsInput
 
@@ -359,7 +377,7 @@ async def get_questions(role: str = None):
 
 
 @app.post("/api/questions")
-async def add_question(question_data: dict):
+async def add_question(question_data: dict, user=Depends(get_current_user)):
     """Add a new question."""
     from mcp_servers.question_bank_mcp import question_bank_mcp, AddQuestionInput
     from database import DifficultyLevel
@@ -387,8 +405,8 @@ async def add_question(question_data: dict):
 
 # Evaluation endpoint
 @app.get("/api/evaluations/{room_id}")
-async def get_evaluation(room_id: str):
-    """Get evaluation report for an interview."""
+async def get_evaluation(room_id: str, user=Depends(get_current_user)):
+    """Get evaluation report for an interview. Only the creator can view it."""
     from database import SessionLocal, Evaluation, InterviewSession
 
     db: Session = SessionLocal()
@@ -402,6 +420,11 @@ async def get_evaluation(room_id: str):
 
         if not eval_record or not session_record:
             return {"success": False, "error": "Evaluation not found for this room"}
+
+        if session_record.created_by != user.id:
+            raise HTTPException(
+                status_code=403, detail="You can only view your own evaluations"
+            )
 
         return {
             "success": True,
@@ -425,6 +448,8 @@ async def get_evaluation(room_id: str):
                 "report_path": eval_record.report_path,
             },
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching evaluation: {e}")
         return {"success": False, "error": str(e)}
