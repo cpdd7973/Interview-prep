@@ -51,6 +51,10 @@ const InterviewRoom = () => {
   const pollTimerRef = useRef(null);
   const abortControllerRef = useRef(null);
   const wsRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimeoutRef = useRef(null);
+  const intentionalCloseRef = useRef(false);
+  const [reconnectError, setReconnectError] = useState(null);
   const mediaRecorderRef = useRef(null);
   const recognitionStoppedRef = useRef(false);
   const pendingTranscriptRef = useRef(null);
@@ -410,7 +414,7 @@ const InterviewRoom = () => {
     if ((viewState !== 'ACTIVE' && viewState !== 'READY') || !isAIOptedIn) return;
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    
+
     // Robust WebSocket URL construction
     let wsUrl;
     if (import.meta.env.VITE_API_BASE_URL) {
@@ -421,31 +425,17 @@ const InterviewRoom = () => {
       wsUrl = `${wsProtocol}//${window.location.host}/api/interviews/${roomId}/ws`;
     }
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const BASE_RECONNECT_DELAY_MS = 1000;
+    const MAX_RECONNECT_DELAY_MS = 15000;
+
+    intentionalCloseRef.current = false;
+    reconnectAttemptsRef.current = 0;
+    setReconnectError(null);
 
     // ── Dmitri's Pattern: WebSocket heartbeat every 15s ──
     let heartbeatInterval = null;
 
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-      setSystemStatus("Connected. Synchronizing with AI...");
-      // Signal backend that frontend is ready
-      ws.send(JSON.stringify({ type: 'start' }));
-
-      // Dmitri: heartbeat keeps connection alive
-      heartbeatInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 15000);
-
-      // Only acquire mic stream — do NOT start recording yet.
-      // Recording starts after the AI greeting finishes playing
-      // (handled by the isAISpeaking effect below).
-      initMicStream();
-    };
-    
     // ── Helper: Browser TTS with Hard Timeout Safety Net (CORE Rule #7) ──
     const _speakWithSafetyNet = (text) => {
       if (!text || !window.speechSynthesis) {
@@ -479,109 +469,171 @@ const InterviewRoom = () => {
       window.speechSynthesis.speak(utterance);
     };
 
-    ws.onmessage = async (event) => {
-      if (event.data instanceof Blob) {
-        // AI Audio response received
-        setIsAISpeaking(true);
-        setLastAudioReceivedAt(Date.now());
-        
-        // Clear fallback timer if it exists
-        if (ttsFallbackTimerRef.current) {
-          console.log("[VOICE] 🛑 Binary audio received. Clearing browser TTS fallback timer.");
-          clearTimeout(ttsFallbackTimerRef.current);
-          ttsFallbackTimerRef.current = null;
-        }
+    // Establishes one WebSocket connection. Called on initial mount and
+    // again from onclose (with backoff) if the connection drops
+    // unexpectedly, so it can rejoin the same room without re-greeting
+    // (the backend restores messages/skill_plan/phase from the DB).
+    function connectWebSocket() {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-        // Hard fix for double-voice: Stop any ongoing browser synthesis immediately
-        if (window.speechSynthesis && window.speechSynthesis.speaking) {
-          console.warn("[VOICE] 🔇 Stopping ongoing browser TTS to play backend audio.");
-          window.speechSynthesis.cancel();
-        }
+      ws.onopen = () => {
+        console.log("WebSocket connected");
+        reconnectAttemptsRef.current = 0;
+        setReconnectError(null);
+        setSystemStatus("Connected. Synchronizing with AI...");
+        // Signal backend that frontend is ready
+        ws.send(JSON.stringify({ type: 'start' }));
 
-        const audioUrl = URL.createObjectURL(event.data);
-        const audio = new Audio(audioUrl);
-
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          setTimeout(() => {
-            setIsAISpeaking(false);
-          }, 500);
-        };
-
-        try {
-          await audio.play();
-        } catch (e) {
-          console.error("Audio playback failed:", e);
-          setIsAISpeaking(false);
-        }
-      } else {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket Message:", data);
-        
-        if (data.type === 'connection_ready') {
-          console.log("Backend signal: Connection ready.");
-          setSystemStatus(data.rejoined ? "Re-connected to active session." : "AI Agent is ready.");
-        } else if (data.type === 'status') {
-          setSystemStatus(data.text);
-        } else if (data.type === 'transcript') {
-          setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
-          
-          if (data.speaker === 'AI') {
-            setSystemStatus(""); // Clear warming-up status once AI speaks
-            setIsAISpeaking(true); 
-            lastAITextRef.current = data.text;
-            
-            // Clear any existing timer from a previous partial message
-            if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
-            
-            ttsFallbackTimerRef.current = setTimeout(() => {
-              // Safety check: is the browser still waiting for audio?
-              if (ttsFallbackTimerRef.current) {
-                console.warn("⚠️ Backend TTS fallback triggered after 5s timeout.");
-                _speakWithSafetyNet(data.text);
-                ttsFallbackTimerRef.current = null;
-              }
-            }, 5000); // Increased from 2.5s to 5s for stability
+        // Dmitri: heartbeat keeps connection alive
+        heartbeatInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
           }
-        } else if (data.type === 'interview_complete') {
-          console.log("🎉 Interview completed signal received.");
-          setPendingCompletion(true);
-        } else if (data.type === 'audio_failed') {
-          console.warn("⚠️ AI Audio generation failed. Using browser TTS fallback.");
-          setSystemStatus("");
-          // Clear the delayed fallback timer — we'll trigger TTS immediately
+        }, 15000);
+
+        // Only acquire mic stream — do NOT start recording yet.
+        // Recording starts after the AI greeting finishes playing
+        // (handled by the isAISpeaking effect below).
+        initMicStream();
+      };
+
+      ws.onmessage = async (event) => {
+        if (event.data instanceof Blob) {
+          // AI Audio response received
+          setIsAISpeaking(true);
+          setLastAudioReceivedAt(Date.now());
+
+          // Clear fallback timer if it exists
           if (ttsFallbackTimerRef.current) {
+            console.log("[VOICE] 🛑 Binary audio received. Clearing browser TTS fallback timer.");
             clearTimeout(ttsFallbackTimerRef.current);
             ttsFallbackTimerRef.current = null;
           }
-          // Immediately use browser TTS with hard timeout safety net
-          const aiText = lastAITextRef.current;
-          if (aiText && window.speechSynthesis) {
-            _speakWithSafetyNet(aiText);
-          } else {
+
+          // Hard fix for double-voice: Stop any ongoing browser synthesis immediately
+          if (window.speechSynthesis && window.speechSynthesis.speaking) {
+            console.warn("[VOICE] 🔇 Stopping ongoing browser TTS to play backend audio.");
+            window.speechSynthesis.cancel();
+          }
+
+          const audioUrl = URL.createObjectURL(event.data);
+          const audio = new Audio(audioUrl);
+
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            setTimeout(() => {
+              setIsAISpeaking(false);
+            }, 500);
+          };
+
+          try {
+            await audio.play();
+          } catch (e) {
+            console.error("Audio playback failed:", e);
             setIsAISpeaking(false);
           }
-        } else if (data.type === 'pong') {
-          // Heartbeat response
-        }
-      }
-    };
+        } else {
+          const data = JSON.parse(event.data);
+          console.log("WebSocket Message:", data);
 
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-      if (recordingCycleRef.current) clearTimeout(recordingCycleRef.current);
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-    };
+          if (data.type === 'connection_ready') {
+            console.log("Backend signal: Connection ready.");
+            setSystemStatus(data.rejoined ? "Re-connected to active session." : "AI Agent is ready.");
+          } else if (data.type === 'status') {
+            setSystemStatus(data.text);
+          } else if (data.type === 'transcript') {
+            setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
+
+            if (data.speaker === 'AI') {
+              setSystemStatus(""); // Clear warming-up status once AI speaks
+              setIsAISpeaking(true);
+              lastAITextRef.current = data.text;
+
+              // Clear any existing timer from a previous partial message
+              if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
+
+              ttsFallbackTimerRef.current = setTimeout(() => {
+                // Safety check: is the browser still waiting for audio?
+                if (ttsFallbackTimerRef.current) {
+                  console.warn("⚠️ Backend TTS fallback triggered after 5s timeout.");
+                  _speakWithSafetyNet(data.text);
+                  ttsFallbackTimerRef.current = null;
+                }
+              }, 5000); // Increased from 2.5s to 5s for stability
+            }
+          } else if (data.type === 'interview_complete') {
+            console.log("🎉 Interview completed signal received.");
+            // Backend closes the socket shortly after this; don't treat
+            // that as a dropped connection needing a reconnect.
+            intentionalCloseRef.current = true;
+            setPendingCompletion(true);
+          } else if (data.type === 'audio_failed') {
+            console.warn("⚠️ AI Audio generation failed. Using browser TTS fallback.");
+            setSystemStatus("");
+            // Clear the delayed fallback timer — we'll trigger TTS immediately
+            if (ttsFallbackTimerRef.current) {
+              clearTimeout(ttsFallbackTimerRef.current);
+              ttsFallbackTimerRef.current = null;
+            }
+            // Immediately use browser TTS with hard timeout safety net
+            const aiText = lastAITextRef.current;
+            if (aiText && window.speechSynthesis) {
+              _speakWithSafetyNet(aiText);
+            } else {
+              setIsAISpeaking(false);
+            }
+          } else if (data.type === 'pong') {
+            // Heartbeat response
+          }
+        }
+      };
+
+      ws.onerror = (err) => {
+        // The browser fires onclose right after onerror for connection
+        // failures, so reconnect scheduling lives in onclose only —
+        // this just gets the failure into the console for diagnostics.
+        console.error("WebSocket error:", err);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected");
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (recordingCycleRef.current) clearTimeout(recordingCycleRef.current);
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+
+        if (intentionalCloseRef.current) return;
+
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          const attempt = reconnectAttemptsRef.current;
+          const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
+          reconnectAttemptsRef.current += 1;
+          setSystemStatus(`Connection lost. Reconnecting (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, delay);
+        } else {
+          setSystemStatus("");
+          setReconnectError("Lost connection to the interview server and could not reconnect. Please refresh the page.");
+        }
+      };
+    }
+
+    connectWebSocket();
 
     return () => {
+      intentionalCloseRef.current = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (recordingCycleRef.current) clearTimeout(recordingCycleRef.current);
       if (micLevelIntervalRef.current) clearInterval(micLevelIntervalRef.current);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
@@ -896,6 +948,21 @@ const InterviewRoom = () => {
             </div>
 
             <div style={{ textAlign: 'center', maxWidth: '600px' }}>
+            {reconnectError && (
+              <div style={{
+                marginTop: '-20px',
+                marginBottom: '16px',
+                padding: '10px 16px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#fca5a5',
+                fontSize: '14px',
+                fontWeight: '500',
+              }}>
+                ⚠️ {reconnectError}
+              </div>
+            )}
             {/* NEW: System/AI Status Feedback */}
             {systemStatus && (
               <div style={{
@@ -986,6 +1053,7 @@ const InterviewRoom = () => {
             onClick={() => {
               if (showLeaveConfirm) {
                 console.log("[ROOM] 🚪 Confirmed leave. Navigating to dashboard...");
+                intentionalCloseRef.current = true;
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                   wsRef.current.close();
                 }
