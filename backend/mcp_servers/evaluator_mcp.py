@@ -24,6 +24,9 @@ def extract_json(content: str) -> str:
         parsed = json.loads(content)
         return json.dumps(parsed)
     except Exception:
+        logger.debug(
+            "extract_json: direct json.loads failed, falling back to regex extraction"
+        )
         match = re.search(r"\{.*\}", content, re.DOTALL)
         if match:
             return match.group(0)

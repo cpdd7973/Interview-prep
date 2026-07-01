@@ -757,7 +757,10 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             logger.info(f"[{room_id} (Browser STT)]: {spoken_text}")
                         else:
                             continue
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(
+                            f"[{room_id}] Failed to parse WS text message: {e}"
+                        )
                         continue
 
                 elif "bytes" in message:
