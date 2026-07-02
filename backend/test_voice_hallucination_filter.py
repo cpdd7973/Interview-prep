@@ -57,6 +57,33 @@ def test_live_confirmed_hallucinations_are_filtered():
     assert is_hallucinated_transcript("Thank you. Thank you.") is True
 
 
+def test_concatenated_hallucination_fragments_are_filtered():
+    """
+    Second live-discovered gap, found on a follow-up live test AFTER the
+    first fix shipped: Whisper concatenated two different hallucination
+    fragments into one longer sentence -- "I'm going to go to the next
+    slide. Thank you. Thank you." The combined normalized string doesn't
+    exact-match any single HALLUCINATION_PHRASES entry and isn't a clean
+    periodic repetition, so it slipped through checks #1 and #2 and got
+    sent to the interviewer as a real candidate answer.
+    """
+    assert is_hallucinated_transcript(
+        "I'm going to go to the next slide. Thank you. Thank you."
+    ) is True
+    # A lone filler word must NOT be caught by the same mechanism -- it
+    # needs to fall through to the dedicated (corroboration-based) filler
+    # check instead, which is deliberately more conservative.
+    assert is_hallucinated_transcript("um", avg_no_speech_prob=0.1) is False
+    # A real multi-sentence answer that happens to include a genuine
+    # "thank you" must not be swept up just because it's multi-sentence.
+    assert is_hallucinated_transcript(
+        "Thank you. My experience is mostly with FastAPI and PostgreSQL."
+    ) is False
+    assert is_hallucinated_transcript(
+        "I use REST APIs. I also use GraphQL sometimes."
+    ) is False
+
+
 def test_legitimate_short_answers_are_not_filtered():
     """
     Regression guard for the earlier audit's finding: the old main.py
@@ -141,6 +168,7 @@ if __name__ == "__main__":
     test_normalize_transcript()
     test_find_repeated_phrase()
     test_live_confirmed_hallucinations_are_filtered()
+    test_concatenated_hallucination_fragments_are_filtered()
     test_legitimate_short_answers_are_not_filtered()
     test_filler_word_corroboration()
     test_compression_ratio_branch_respects_word_count_cap()

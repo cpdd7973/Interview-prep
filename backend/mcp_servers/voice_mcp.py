@@ -169,6 +169,38 @@ def _find_repeated_phrase(words: List[str]) -> Optional[str]:
     return None
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
+
+
+def _all_sentences_are_hallucinations(text: str) -> bool:
+    """
+    Live-confirmed gap: Whisper can concatenate multiple DIFFERENT
+    hallucination fragments into one longer sentence, e.g. "I'm going to go
+    to the next slide. Thank you. Thank you." -- the combined normalized
+    string ("im going to go to the next slide thank you thank you") doesn't
+    exact-match any single HALLUCINATION_PHRASES entry, and isn't a clean
+    periodic repetition either, so neither check #1 nor #2 catches it.
+
+    Splits on sentence-ending punctuation BEFORE normalization (normalizing
+    first would destroy the sentence boundaries), normalizes each piece
+    separately, and returns True only if there are at least TWO non-empty
+    sentences and EVERY one of them individually matches a known
+    hallucination/filler phrase. Requiring 2+ sentences means a lone filler
+    word ("um") is NOT caught here -- it falls through to the dedicated
+    filler-corroboration check instead, which is deliberately more
+    conservative (needs a corroborating confidence signal) than this
+    concatenation check. A transcript with even one sentence that isn't on
+    the list is left alone, so this can't over-filter a real multi-sentence
+    answer that happens to include an actual "thank you".
+    """
+    pieces = [normalize_transcript(p) for p in _SENTENCE_SPLIT_RE.split(text)]
+    sentences = [p for p in pieces if p]
+    if len(sentences) < 2:
+        return False
+    known = HALLUCINATION_PHRASES | FILLER_ONLY_PHRASES
+    return all(s in known for s in sentences)
+
+
 def is_hallucinated_transcript(
     text: str,
     avg_no_speech_prob: Optional[float] = None,
@@ -193,6 +225,12 @@ def is_hallucinated_transcript(
 
     # 2. Repeated short sub-phrase, e.g. "thank you thank you".
     if _find_repeated_phrase(words) is not None:
+        return True
+
+    # 2.5. Multiple concatenated hallucination fragments, e.g. "I'm going to
+    #      go to the next slide. Thank you. Thank you." -- each sentence is
+    #      individually a known phrase even though the combined string isn't.
+    if _all_sentences_are_hallucinations(text):
         return True
 
     # 3. Filler-only utterance -- ambiguous alone, filtered only when
