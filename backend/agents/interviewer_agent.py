@@ -9,6 +9,7 @@ tracking to decide when to end (minimum 30 minutes).
 from typing import Dict, Any, List, Optional
 import logging
 import json
+import random
 import re
 from datetime import datetime, timezone
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -16,6 +17,8 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from agents.state import InterviewState
 from utils.groq_client import llm_client
 from config import settings
+from database import QuestionDifficulty
+from mcp_servers.question_bank_mcp import question_bank_mcp, GetQuestionsInput
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +80,7 @@ COVERAGE SO FAR:
 - Topics already covered: {topics_covered}
 - Topics remaining: {topics_remaining}
 - Current phase: {current_phase}
-
+{suggested_question_section}
 TIME CONTEXT:
 - Interview started: {interview_start_time}
 - Elapsed time: {elapsed_minutes} minutes
@@ -105,9 +108,15 @@ RESPONSE FORMAT — respond with a SINGLE valid JSON object, no markdown:
 }}
 
 STYLE:
-- Keep spoken_response conversational, concise, and under 4 sentences.
-- Acknowledge good answers briefly before moving on.
-- For weak answers, ask ONE targeted follow-up before moving to the next topic.
+- Keep spoken_response natural and conversational -- typically 2-5 sentences, but let a genuinely
+  engaging moment run longer rather than truncating it artificially.
+- Acknowledge answers the way a real interviewer would: briefly affirm genuine strengths, but do not
+  praise weak or vague answers just to be polite.
+- If an answer is vague, generic, or dodges the question, push back like a real interviewer: ask for a
+  concrete example, a specific number, or "walk me through exactly how you did that." You may ask up to
+  TWO follow-ups on the same topic if it's still not concrete after the first -- then move on.
+- Show brief moments of reflection where natural ("Interesting, let me think about that for a second")
+  rather than responding instantly every time -- use sparingly, not every turn.
 - Transition between phases naturally — do NOT announce "now entering core phase".
 - Adapt questions based on the candidate's introduction and prior answers.
 
@@ -246,6 +255,48 @@ def determine_phase(topics_covered: List[str], skill_plan: Dict[str, List[str]])
 
     # If we've covered foundation and core, move to secondary
     return "secondary"
+
+
+def target_difficulty(recent_scores: List[int]) -> QuestionDifficulty:
+    """Map recent per-answer scores to a target question-bank difficulty tier."""
+    if not recent_scores:
+        return QuestionDifficulty.MEDIUM
+    avg = sum(recent_scores) / len(recent_scores)
+    if avg >= 7:
+        return QuestionDifficulty.HARD
+    if avg <= 4:
+        return QuestionDifficulty.EASY
+    return QuestionDifficulty.MEDIUM
+
+
+def get_suggested_question(
+    job_role: str, difficulty: QuestionDifficulty, topics_remaining: List[str]
+) -> Optional[str]:
+    """
+    Pull a candidate question from the question bank at the target difficulty,
+    preferring one whose topic overlaps with topics_remaining. Returns None
+    (not a hard dependency) if the bank has nothing usable for this role/tier --
+    the LLM simply improvises as it always has.
+    """
+    try:
+        resp = question_bank_mcp.get_questions_by_role(
+            GetQuestionsInput(role=job_role, difficulty=difficulty, limit=15)
+        )
+        if not resp.get("success"):
+            return None
+        questions = resp.get("questions", [])
+        if not questions:
+            return None
+
+        remaining_lower = [t.lower() for t in topics_remaining]
+        topic_matches = [
+            q for q in questions if q.get("topic", "").lower() in remaining_lower
+        ]
+        pool = topic_matches or questions
+        return random.choice(pool).get("question_text")
+    except Exception as e:
+        logger.warning(f"get_suggested_question failed, LLM will improvise instead: {e}")
+        return None
 
 
 def calculate_elapsed_minutes(interview_started_at: Optional[str]) -> float:
@@ -408,6 +459,21 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
     # --- Step 4: Determine current phase ---
     current_phase = determine_phase(topics_covered, skill_plan)
 
+    # --- Step 4.5: Adaptive difficulty -- pick a candidate question from the
+    # bank at a difficulty matching recent performance, as an optional
+    # suggestion the LLM can adapt or ignore. ---
+    recent_scores = list(state.get("recent_scores", []))
+    difficulty = target_difficulty(recent_scores)
+    suggested_question = get_suggested_question(
+        state.get("job_role", "Software Engineer"), difficulty, topics_remaining
+    )
+    suggested_question_section = (
+        f"- Suggested next question ({difficulty.value} difficulty, adapt freely or ask "
+        f"something related if it doesn't fit the conversation naturally): {suggested_question}\n"
+        if suggested_question
+        else ""
+    )
+
     # --- Step 5: Build the prompt ---
     jd_text = state.get("job_description")
     if not jd_text or not jd_text.strip():
@@ -424,6 +490,7 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         topics_covered=", ".join(topics_covered) if topics_covered else "None yet",
         topics_remaining=", ".join(topics_remaining) if topics_remaining else "All topics covered",
         current_phase=current_phase,
+        suggested_question_section=suggested_question_section,
         interview_start_time=state.get("interview_started_at", "just now"),
         elapsed_minutes=f"{elapsed_minutes:.1f}",
         min_duration_minutes=settings.min_interview_duration_minutes,
@@ -448,6 +515,11 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         notes = decision.get("evaluation_notes")
         if score is not None:
             logger.info(f"Answer Scored: {score}/10. Notes: {notes}")
+            try:
+                recent_scores.append(int(float(score)))
+                recent_scores = recent_scores[-3:]
+            except (TypeError, ValueError):
+                logger.warning(f"Non-numeric score_of_last_answer ignored: {score!r}")
 
         # Track topic coverage
         topic = decision.get("topic_covered")
@@ -477,6 +549,7 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
             "messages": [AIMessage(content=spoken_response)],
             "topics_covered": topics_covered,
             "current_phase": reported_phase,
+            "recent_scores": recent_scores,
         }
 
         # Include skill_plan if it was just extracted

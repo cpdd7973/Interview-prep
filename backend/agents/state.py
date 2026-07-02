@@ -43,6 +43,11 @@ class InterviewState(TypedDict):
     current_phase: str  # introduction|foundation|core|secondary|wrap_up
     interview_started_at: Optional[str]  # ISO timestamp for 30-min tracking
 
+    # Adaptive difficulty tracking -- transient (not persisted to the DB), a
+    # reconnect losing a turn or two of "difficulty momentum" is a minor UX
+    # blip, not a correctness bug worth a schema change.
+    recent_scores: List[int]  # last few score_of_last_answer values, most recent last
+
     # Post-interview pipeline output
     report_path: Optional[str]
     email_failed: Optional[bool]
