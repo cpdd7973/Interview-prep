@@ -6,6 +6,7 @@ Uses Whisper (tiny) for transcription (lazy loading) and Edge-TTS for synthesis.
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 import logging
+import random
 import tempfile
 import os
 import edge_tts
@@ -27,6 +28,14 @@ class SynthesizeSpeechInput(BaseModel):
     voice: str = Field("en-US-AriaNeural", description="Edge-TTS voice ID")
     output_path: Optional[str] = Field(
         None, description="Path where to save audio file"
+    )
+    rate: Optional[str] = Field(
+        None,
+        description=(
+            "Edge-TTS rate override, e.g. '+5%'. If not provided, a small "
+            "natural jitter is applied so cadence isn't perfectly uniform "
+            "turn-to-turn."
+        ),
     )
 
 
@@ -211,7 +220,15 @@ class VoiceMCPServer:
                 fd, out_path = tempfile.mkstemp(suffix=".mp3")
                 os.close(fd)
 
-            communicate = edge_tts.Communicate(input_data.text, input_data.voice)
+            rate = input_data.rate
+            if rate is None:
+                # Small natural jitter so consecutive responses don't all play
+                # at an identical, robotic cadence. Biased slightly toward
+                # slower rather than faster, since rushed TTS reads worse
+                # than a mildly relaxed pace.
+                rate = f"{random.uniform(-6, 4):+.0f}%"
+
+            communicate = edge_tts.Communicate(input_data.text, input_data.voice, rate=rate)
             await communicate.save(out_path)
 
             logger.info(f"Synthesized text to {out_path}")
