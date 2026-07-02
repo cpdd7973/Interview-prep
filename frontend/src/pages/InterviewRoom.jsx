@@ -10,7 +10,7 @@
  * - CANCELLED: Interview was cancelled
  */
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import CountdownTimer from '../components/CountdownTimer';
 import WaitingScreen from '../components/WaitingScreen';
 import VoiceIndicator from '../components/VoiceIndicator';
@@ -37,6 +37,11 @@ const EARLY_ENTRY_SECONDS = 5 * 60; // 5 minutes
 const InterviewRoom = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // QA/admin escape hatch: ?debug=1 shows the timer/counter/mic diagnostics
+  // that are otherwise hidden from candidates so the room feels like a real
+  // conversation rather than a quiz/form.
+  const showDiagnostics = searchParams.get('debug') === '1';
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [roomState, setRoomState] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -783,9 +788,11 @@ const InterviewRoom = () => {
           </div>
 
           <div className="active-header-center">
-            <div style={{ color: '#e2e8f0', fontSize: '14px', background: 'rgba(0,0,0,0.2)', padding: '6px 16px', borderRadius: '15px', fontWeight: '500' }}>
-              Progress: Question {Math.max(1, Math.floor(messages.filter(m => m && m.speaker && m.speaker.toLowerCase() === 'ai').length))} of ~5
-            </div>
+            {showDiagnostics && (
+              <div style={{ color: '#e2e8f0', fontSize: '14px', background: 'rgba(0,0,0,0.2)', padding: '6px 16px', borderRadius: '15px', fontWeight: '500' }}>
+                Progress: Question {Math.max(1, Math.floor(messages.filter(m => m && m.speaker && m.speaker.toLowerCase() === 'ai').length))} of ~5
+              </div>
+            )}
           </div>
 
           <div className="active-header-right">
@@ -800,7 +807,7 @@ const InterviewRoom = () => {
                 borderRadius: '50%', display: 'inline-block'
               }} />
               <span style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>Live</span>
-              <ActiveTimer />
+              {showDiagnostics && <ActiveTimer />}
             </div>
           </div>
         </div>
@@ -824,35 +831,37 @@ const InterviewRoom = () => {
             style={{ zIndex: 900 }}
           ></div>
           
-          {/* Floating Diagnostic Dashboard (Visible in Active room) */}
-          <div className="diagnostic-badge" style={{
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(5px)',
-            padding: '8px 12px',
-            borderRadius: '12px',
-            fontSize: '11px',
-            color: 'white',
-            display: 'flex',
-            gap: '15px',
-            border: '1px solid rgba(255,255,255,0.1)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                background: micActive ? '#4ade80' : '#64748b',
-                boxShadow: micActive ? '0 0 8px #4ade80' : 'none'
-              }}></div>
-              <span>Mic: {micActive ? 'CAPTURING' : 'IDLE'}</span>
+          {/* Floating Diagnostic Dashboard (QA/admin only -- ?debug=1) */}
+          {showDiagnostics && (
+            <div className="diagnostic-badge" style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(5px)',
+              padding: '8px 12px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              color: 'white',
+              display: 'flex',
+              gap: '15px',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: micActive ? '#4ade80' : '#64748b',
+                  boxShadow: micActive ? '0 0 8px #4ade80' : 'none'
+                }}></div>
+                <span>Mic: {micActive ? 'CAPTURING' : 'IDLE'}</span>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px' }}>
+                <span>Out: {(bytesSent / 1024).toFixed(1)} KB</span>
+              </div>
             </div>
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px' }}>
-              <span>Out: {(bytesSent / 1024).toFixed(1)} KB</span>
-            </div>
-          </div>
+          )}
 
           {/* Left Sidebar: Transcript + Text Input (Priya's pattern) */}
           <div className={`chat-container ${isChatVisible ? 'open' : ''}`} style={{
@@ -987,24 +996,28 @@ const InterviewRoom = () => {
               </div>
             )}
               <h3 style={{ margin: '0 0 10px 0', fontSize: '24px', color: '#e2e8f0', fontWeight: '600' }}>{roomState.interviewer_designation}</h3>
-              <p style={{
-                fontSize: '18px', color: '#a0aec0', lineHeight: '1.6',
-                backgroundColor: '#2d3748', padding: '20px', borderRadius: '12px'
-              }}>
-                {isAISpeaking ? "AI is speaking..." : "AI is listening to your response..."}
-              </p>
-              {/* Mic Level Indicator — helps verify the mic is working */}
-              {!isAISpeaking && (
+              {(showDiagnostics || !isAISpeaking) && (
+                <p style={{
+                  fontSize: '18px', color: '#a0aec0', lineHeight: '1.6',
+                  backgroundColor: '#2d3748', padding: '20px', borderRadius: '12px'
+                }}>
+                  {showDiagnostics
+                    ? (isAISpeaking ? "AI is speaking..." : "AI is listening to your response...")
+                    : "Your turn"}
+                </p>
+              )}
+              {/* Mic Level Indicator — QA/admin only, helps verify the mic is working */}
+              {showDiagnostics && !isAISpeaking && (
                 <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', width: '100%' }}>
                     <span style={{ fontSize: '13px', color: '#a0aec0' }}>🎙️ Level:</span>
                     <div style={{ width: '180px', height: '10px', backgroundColor: '#1a202c', borderRadius: '5px', overflow: 'hidden', position: 'relative' }}>
                       {/* Threshold Marker */}
-                      <div style={{ 
-                        position: 'absolute', left: `${3 * 3.3}%`, top: 0, bottom: 0, width: '2px', 
-                        backgroundColor: 'rgba(255,255,255,0.4)', zIndex: 2 
+                      <div style={{
+                        position: 'absolute', left: `${3 * 3.3}%`, top: 0, bottom: 0, width: '2px',
+                        backgroundColor: 'rgba(255,255,255,0.4)', zIndex: 2
                       }} title="VAD Threshold" />
-                      
+
                       <div style={{
                         width: `${Math.min(micLevel * 3.3, 100)}%`,
                         height: '100%',
