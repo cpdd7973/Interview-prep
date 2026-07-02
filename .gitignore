@@ -46,3 +46,6 @@ backend/reports/*.pdf
 *_ids.txt
 traceback_log.txt
 
+# Playwright MCP session artifacts (screenshots/snapshots from live testing)
+.playwright-mcp/
+

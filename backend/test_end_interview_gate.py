@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import HumanMessage
 
-from agents.interviewer_agent import interviewer_node, _is_end_interview_premature
+from agents.interviewer_agent import interviewer_node, _is_end_interview_premature, determine_phase
 from agents.state import InterviewState
 
 
@@ -50,15 +50,56 @@ def _base_state(topics_covered, elapsed_minutes_patch_target="agents.interviewer
 
 
 def test_is_end_interview_premature_table():
-    # Under the time floor -> always premature, regardless of phase.
-    assert _is_end_interview_premature(10.0, "secondary", 30) is True
-    assert _is_end_interview_premature(29.9, "secondary", 30) is True
-    # Time floor met but coverage phase not yet "secondary" -> still premature.
-    assert _is_end_interview_premature(31.0, "core", 30) is True
-    assert _is_end_interview_premature(31.0, "foundation", 30) is True
-    # Both conditions satisfied -> legitimate.
-    assert _is_end_interview_premature(31.0, "secondary", 30) is False
-    assert _is_end_interview_premature(30.0, "secondary", 30) is False
+    # Under the time floor -> always premature, regardless of phase or turns.
+    assert _is_end_interview_premature(10.0, "secondary", 30, 10) is True
+    assert _is_end_interview_premature(29.9, "secondary", 30, 10) is True
+    # Time floor met but coverage phase not yet "secondary" and too few turns -> still premature.
+    assert _is_end_interview_premature(31.0, "core", 30, 2) is True
+    assert _is_end_interview_premature(31.0, "foundation", 30, 0) is True
+    # Both conditions satisfied via phase -> legitimate.
+    assert _is_end_interview_premature(31.0, "secondary", 30, 0) is False
+    assert _is_end_interview_premature(30.0, "secondary", 30, 0) is False
+    # Safety valve: phase never reached "secondary" (e.g. LLM topic labels never
+    # matched skill_plan phrasing closely enough), but enough turns happened
+    # anyway -> the gate must still unblock rather than block forever.
+    assert _is_end_interview_premature(31.0, "foundation", 30, 6) is False
+    assert _is_end_interview_premature(31.0, "foundation", 30, 5) is True
+
+
+def test_determine_phase_fuzzy_matches_llm_topic_labels():
+    """
+    Live-discovered bug: exact set-intersection matching under-counted
+    coverage because the LLM's freeform topic_covered labels rarely
+    reproduce skill_plan phrasing verbatim (combined labels, rewording,
+    case differences). Confirmed against real session data.
+    """
+    skill_plan = {
+        "foundation_skills": ["Python", "REST API design"],
+        "core_skills": ["Python", "REST API design", "PostgreSQL", "database indexing", "caching strategies"],
+        "secondary_skills": ["PostgreSQL", "distributed systems"],
+    }
+    # LLM combined two core skills into one label, and reworded a third with
+    # different casing -- exact matching returned "foundation" here in the
+    # live session despite these clearly covering the topics.
+    topics_covered = [
+        "Introduction",
+        "REST API design",
+        "database indexing, caching strategies",
+        "Distributed Systems",
+    ]
+    # Foundation needs "Python" + "REST API design" -- "Python" was never
+    # actually discussed in this transcript, so foundation is genuinely
+    # incomplete; this isn't a false negative, it's correctly still gated.
+    assert determine_phase(topics_covered, skill_plan) == "foundation"
+
+    # Once a fuzzy-matchable "Python" label is added, foundation is complete
+    # and the combined/reworded core labels above should now count toward
+    # core coverage (database indexing + caching strategies both satisfied
+    # by the one combined label, distributed systems isn't core so doesn't
+    # count there) -- core needs 3 of 5, we have REST API design + Python +
+    # database indexing + caching strategies = 4, so this should reach "secondary".
+    topics_covered_with_python = topics_covered + ["Python type hints and asyncio"]
+    assert determine_phase(topics_covered_with_python, skill_plan) == "secondary"
 
 
 def test_premature_end_is_blocked_and_corrected():
@@ -153,10 +194,40 @@ def test_legitimate_end_after_minimum_and_full_coverage_is_allowed():
     assert result.get("status") == "COMPLETED"
 
 
+def test_wrap_up_action_is_treated_as_end_interview():
+    """
+    Live-discovered: the LLM sometimes puts "wrap_up" (borrowed from the
+    current_phase vocabulary) in the action field instead of the literal
+    "end_interview" value. Confirmed this happened twice in one real
+    session. Without normalizing it, the interview never even reaches the
+    end_interview gate and silently continues as a no-op turn forever.
+    """
+    end_attempt = (
+        '{"action": "wrap_up", "spoken_response": "Well, that\'s all the questions I had.", '
+        '"topic_covered": null, "current_phase": "secondary"}'
+    )
+
+    async def fake_invoke(_messages):
+        return end_attempt
+
+    state = _base_state(topics_covered=["A", "B", "C", "D", "E"])
+
+    with patch("agents.interviewer_agent.llm_client.invoke_async", new=AsyncMock(return_value=end_attempt)), \
+         patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=31.0):
+        result = asyncio.run(interviewer_node(state))
+
+    # Coverage is legitimate here (secondary phase), so this should complete,
+    # not just get routed into the gate -- proves the normalization actually
+    # reaches the action == "end_interview" branch.
+    assert result.get("status") == "COMPLETED"
+
+
 if __name__ == "__main__":
     test_is_end_interview_premature_table()
     test_premature_end_is_blocked_and_corrected()
     test_premature_end_falls_back_deterministically_if_correction_also_refuses()
     test_premature_end_falls_back_if_corrective_call_raises()
     test_legitimate_end_after_minimum_and_full_coverage_is_allowed()
+    test_determine_phase_fuzzy_matches_llm_topic_labels()
+    test_wrap_up_action_is_treated_as_end_interview()
     print("All end_interview gate tests passed.")

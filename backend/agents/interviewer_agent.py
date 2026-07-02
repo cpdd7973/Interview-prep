@@ -227,22 +227,38 @@ async def extract_skill_plan(job_role: str, job_description: str) -> Dict[str, L
         }
 
 
+def _topic_matches_skill(topic: str, skill: str) -> bool:
+    """
+    Fuzzy (case-insensitive substring, either direction) match between a
+    freeform topic_covered label and a canonical skill_plan name. Confirmed
+    live: the LLM rarely reproduces skill_plan phrasing verbatim -- it may
+    combine two skills into one label ("database indexing, caching
+    strategies") or reword one ("Python type hints" for "Python"). Exact
+    set-intersection matching under-counts real coverage badly enough that
+    determine_phase() could never reach "secondary" in a real session.
+    """
+    t, s = topic.lower(), skill.lower()
+    return s in t or t in s
+
+
 def determine_phase(topics_covered: List[str], skill_plan: Dict[str, List[str]]) -> str:
     """Determine current interview phase based on what's been covered."""
     if not topics_covered:
         return "introduction"
 
-    foundation = set(skill_plan.get("foundation_skills", []))
-    core = set(skill_plan.get("core_skills", []))
-
-    covered_set = set(topics_covered)
+    foundation = skill_plan.get("foundation_skills", [])
+    core = skill_plan.get("core_skills", [])
 
     # Check how many skills from each category have been touched
-    foundation_covered = len(covered_set & foundation) if foundation else 0
-    core_covered = len(covered_set & core) if core else 0
+    foundation_covered = sum(
+        1 for skill in foundation if any(_topic_matches_skill(t, skill) for t in topics_covered)
+    )
+    core_covered = sum(
+        1 for skill in core if any(_topic_matches_skill(t, skill) for t in topics_covered)
+    )
 
     # Introduction is only the very first exchange
-    if len(topics_covered) <= 1 and "Introduction" in covered_set:
+    if len(topics_covered) <= 1 and any(t.lower() == "introduction" for t in topics_covered):
         return "introduction"
 
     # If we haven't covered enough foundation skills yet
@@ -316,8 +332,19 @@ def calculate_elapsed_minutes(interview_started_at: Optional[str]) -> float:
         return 0.0
 
 
+# Safety valve for the coverage check: even with fuzzy topic matching,
+# determine_phase() depends on the LLM's freeform topic_covered labels
+# lining up with skill_plan phrasing closely enough to recognize. Confirmed
+# live: it can still under-count (a merged label like "Core skills,
+# Secondary skills" matches nothing). Without a turn-count fallback, a
+# session where labeling drifts badly enough could never satisfy
+# phase == "secondary" and the gate would block every legitimate end
+# attempt forever. This guarantees the gate always unblocks eventually.
+MIN_CANDIDATE_TURNS_TO_END = 6
+
+
 def _is_end_interview_premature(
-    elapsed_minutes: float, phase: str, min_duration_minutes: int
+    elapsed_minutes: float, phase: str, min_duration_minutes: int, candidate_turns: int
 ) -> bool:
     """
     Hard code-level gate -- backstop for the prompt's ENDING RULES, which the
@@ -329,13 +356,17 @@ def _is_end_interview_premature(
     LLM's self-reported phase -- trusting the LLM's own judgment here is
     exactly what this gate exists to not do.
 
+    Coverage is satisfied by EITHER phase == "secondary" OR at least
+    MIN_CANDIDATE_TURNS_TO_END substantive candidate responses -- the turn
+    count is a mechanical, LLM-labeling-proof safety valve (see above).
+
     Does not apply to the candidate's explicit "please stop" path
     (interviewer_node, checked earlier) -- that path returns before this
     function is ever reached.
     """
     if elapsed_minutes < min_duration_minutes:
         return True
-    if phase != "secondary":
+    if phase != "secondary" and candidate_turns < MIN_CANDIDATE_TURNS_TO_END:
         return True
     return False
 
@@ -506,6 +537,14 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         # Process JSON Response
         decision = extract_json(response_text)
         action = decision.get("action", "next_question")
+        # Confirmed live: the model sometimes puts "wrap_up" (borrowed from
+        # the current_phase vocabulary) in the action field when it clearly
+        # means to end the interview -- "wrap_up" isn't a valid action value
+        # (follow_up|next_question|end_interview), so without this it would
+        # silently fall through as a no-op continuation instead of hitting
+        # the end_interview gate at all.
+        if action == "wrap_up":
+            action = "end_interview"
         spoken_response = decision.get(
             "spoken_response", "Could you elaborate on that?"
         )
@@ -557,13 +596,17 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
             result["skill_plan"] = skill_plan
 
         if action == "end_interview":
+            candidate_turns = sum(1 for m in messages if isinstance(m, HumanMessage))
             if _is_end_interview_premature(
-                elapsed_minutes, phase_now, settings.min_interview_duration_minutes
+                elapsed_minutes,
+                phase_now,
+                settings.min_interview_duration_minutes,
+                candidate_turns,
             ):
                 logger.warning(
                     f"⛔ Blocked premature end_interview -- elapsed={elapsed_minutes:.1f}min "
                     f"(min={settings.min_interview_duration_minutes}), phase={phase_now}, "
-                    f"topics_remaining={len(topics_remaining_now)}"
+                    f"topics_remaining={len(topics_remaining_now)}, candidate_turns={candidate_turns}"
                 )
                 override = await _override_premature_end(
                     conversation_messages=messages,
