@@ -838,33 +838,15 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             if len(spoken_text) < 3:
                                 continue
 
-                            # ECHO FILTER: Reject common speaker-echo transcriptions.
-                            # When the mic picks up the AI's voice from speakers, Whisper
-                            # typically transcribes it as "Thank you.", "you", etc.
-                            # Real candidate answers have at least 5 words.
-                            word_count = len(spoken_text.split())
-                            echo_phrases = {
-                                "thank you",
-                                "thank you.",
-                                "you",
-                                "okay",
-                                "okay.",
-                                "yes",
-                                "yes.",
-                                "no",
-                                "no.",
-                                "um",
-                                "uh",
-                            }
-                            if (
-                                word_count < 5
-                                and spoken_text.lower().strip(".!?,") in echo_phrases
-                            ):
-                                logger.debug(
-                                    f"[{room_id}] Filtered echo: '{spoken_text}' (likely speaker echo, not candidate)"
-                                )
-                                continue
-
+                            # Hallucination/echo filtering (silence, video-outro
+                            # boilerplate, speaker echo, repeated phrases, etc.)
+                            # is handled entirely inside voice_mcp.transcribe_audio_groq
+                            # -- see is_hallucinated_transcript(). Previously this
+                            # handler had its own separate, smaller, divergent
+                            # phrase list here (including "yes"/"no", which
+                            # incorrectly filtered legitimate candidate answers to
+                            # yes/no questions); consolidated into one filter to
+                            # avoid the two lists drifting apart.
                             logger.info(f"[{room_id} (Groq Whisper)]: {spoken_text}")
                         else:
                             logger.debug(

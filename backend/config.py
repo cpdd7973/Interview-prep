@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # Whisper
     whisper_model: Literal["tiny", "base"] = "tiny"
     whisper_device: Literal["cpu", "cuda"] = "cpu"
+    enable_audio_energy_precheck: bool = True
 
     # Interview Settings
     early_entry_minutes: int = 5
