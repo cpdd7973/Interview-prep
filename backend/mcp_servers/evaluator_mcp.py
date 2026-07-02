@@ -33,6 +33,25 @@ def extract_json(content: str) -> str:
     return content.strip()
 
 
+DIMENSION_KEYS = ["technical", "communication", "problem_solving", "behavioral", "confidence"]
+
+
+def normalize_criteria_reasoning(raw: Any) -> Dict[str, List[str]]:
+    """Validate/coerce the LLM's criteria_reasoning field. Never raises."""
+    result: Dict[str, List[str]] = {}
+    raw = raw if isinstance(raw, dict) else {}
+    for key in DIMENSION_KEYS:
+        bullets = raw.get(key)
+        if isinstance(bullets, list):
+            cleaned = [str(b).strip() for b in bullets if str(b).strip()]
+        else:
+            cleaned = []
+        if not cleaned:
+            cleaned = ["No detailed reasoning provided for this dimension."]
+        result[key] = cleaned[:5]  # hard cap, guard against runaway output
+    return result
+
+
 # Load prompt template
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 prompt_path = os.path.join(base_dir, "prompts", "evaluator_system.txt")
@@ -132,7 +151,7 @@ Candidate Answer: {input_data.answer}"""
             )
 
             # Reiterate to strictly return JSON
-            prompt += "\n\nCRITICAL: YOU MUST RETURN ONLY A VALID JSON OBJECT WITH EXACTLY THESE KEYS: technical_score, communication_score, problem_solving_score, behavioral_score, confidence_score, overall_score, qualitative_feedback. DO NOT RETURN ANY OTHER TEXT."
+            prompt += "\n\nCRITICAL: YOU MUST RETURN ONLY A VALID JSON OBJECT WITH EXACTLY THESE KEYS: technical_score, communication_score, problem_solving_score, behavioral_score, confidence_score, qualitative_feedback, criteria_reasoning. DO NOT RETURN ANY OTHER TEXT."
 
             from langchain_core.messages import SystemMessage
 
@@ -154,6 +173,7 @@ Candidate Answer: {input_data.answer}"""
             prob = float(result.get("problem_solving_score", 0))
             behav = float(result.get("behavioral_score", 0))
             conf = float(result.get("confidence_score", 0))
+            criteria_reasoning = normalize_criteria_reasoning(result.get("criteria_reasoning"))
 
             # Compute mathematically to avoid LLM hallucinations
             overall = round(
@@ -183,6 +203,7 @@ Candidate Answer: {input_data.answer}"""
                     "overall_score": overall,
                 },
                 "feedback": feedback,
+                "criteria_reasoning": criteria_reasoning,
             }
         except Exception as e:
             logger.error(f"❌ Error calculating scores: {e}")

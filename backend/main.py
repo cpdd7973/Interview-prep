@@ -445,6 +445,7 @@ async def get_evaluation(room_id: str, user=Depends(get_current_user)):
                 "confidence_score": eval_record.confidence_score,
                 "overall_score": eval_record.overall_score,
                 "qualitative_feedback": eval_record.qualitative_feedback,
+                "criteria_reasoning": eval_record.criteria_reasoning or {},
                 "report_path": eval_record.report_path,
             },
         }

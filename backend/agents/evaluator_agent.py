@@ -94,6 +94,7 @@ async def evaluator_node(state: InterviewState) -> Dict[str, Any]:
     evaluation_data = {
         "scores": eval_resp.get("scores", {}),
         "feedback": eval_resp.get("feedback", ""),
+        "criteria_reasoning": eval_resp.get("criteria_reasoning", {}),
     }
 
     # Save to SQLite
@@ -114,6 +115,7 @@ async def evaluator_node(state: InterviewState) -> Dict[str, Any]:
                 confidence_score=evaluation_data["scores"].get("confidence_score", 0),
                 overall_score=evaluation_data["scores"].get("overall_score", 0),
                 qualitative_feedback=evaluation_data["feedback"],
+                criteria_reasoning=evaluation_data["criteria_reasoning"],
             )
             # Find and delete old if needed (or assume 1-1)
             existing = (

@@ -100,6 +100,35 @@ export default function Report() {
         </div>
       </section>
 
+      {reportData.criteria_reasoning && Object.keys(reportData.criteria_reasoning).length > 0 && (
+        <section className="reasoning-card">
+          <h2>Detailed Assessment</h2>
+          <div className="reasoning-grid">
+            {[
+              { key: 'technical', label: 'Technical', score: reportData.technical_score },
+              { key: 'communication', label: 'Communication', score: reportData.communication_score },
+              { key: 'problem_solving', label: 'Problem Solving', score: reportData.problem_solving_score },
+              { key: 'behavioral', label: 'Behavioral', score: reportData.behavioral_score },
+              { key: 'confidence', label: 'Confidence', score: reportData.confidence_score },
+            ].map(({ key, label, score }) => {
+              const bullets = reportData.criteria_reasoning[key];
+              if (!bullets || bullets.length === 0) return null;
+              return (
+                <div className="reasoning-item" key={key}>
+                  <div className="reasoning-item-header">
+                    <span className="reasoning-label">{label}</span>
+                    <span className="reasoning-score">{Number(score).toFixed(1)}/10</span>
+                  </div>
+                  <ul className="reasoning-bullets">
+                    {bullets.map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <section className="feedback-card">
         <h2>
           {/* Subtle icon placeholder */}
