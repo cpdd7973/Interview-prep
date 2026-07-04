@@ -174,28 +174,38 @@ class SessionMCPServer:
                 sched_time = sched_time.replace(tzinfo=timezone.utc)
             seconds_remaining = (sched_time - now).total_seconds()
 
-            # Fetch transcript chunks for this session
-            chunks = (
-                db.query(TranscriptChunk)
-                .filter(TranscriptChunk.room_id == room_id)
-                .order_by(TranscriptChunk.timestamp)
-                .all()
-            )
-
-            transcript_list = [
-                {
-                    "speaker": chunk.speaker.value,
-                    "text": chunk.content,
-                    "timestamp": chunk.timestamp.isoformat() + "Z",
-                }
-                for chunk in chunks
-            ]
+            # This route is unauthenticated by design (room_id is the
+            # candidate's credential), so only fetch/return the transcript
+            # while the interview is actually in progress -- that's the one
+            # legitimate candidate-side need (rehydrating the chat on a
+            # refresh, see frontend InterviewRoom.jsx). Once the session is
+            # COMPLETED/EXPIRED/CANCELLED, the transcript stays private to
+            # the authenticated /transcript and /evaluations routes instead
+            # of remaining fetchable forever by anyone who still has the
+            # room_id.
+            transcript_list = []
+            if session.status in (SessionStatus.ACTIVE, SessionStatus.DISCONNECTED):
+                chunks = (
+                    db.query(TranscriptChunk)
+                    .filter(TranscriptChunk.room_id == room_id)
+                    .order_by(TranscriptChunk.timestamp)
+                    .all()
+                )
+                transcript_list = [
+                    {
+                        "speaker": chunk.speaker.value,
+                        "text": chunk.content,
+                        "timestamp": chunk.timestamp.isoformat() + "Z",
+                    }
+                    for chunk in chunks
+                ]
 
             return {
                 "success": True,
                 "room_id": session.room_id,
                 "candidate_name": session.candidate.name,
-                "candidate_email": session.candidate.email,
+                # candidate_email intentionally omitted -- this route is
+                # unauthenticated and the frontend never reads this field.
                 "job_role": session.job_role,
                 "company": session.company,
                 "interviewer_designation": session.interviewer_designation,
