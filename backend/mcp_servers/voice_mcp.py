@@ -393,6 +393,7 @@ class VoiceMCPServer:
                         # - temperature=0 reduces randomness/hallucination
                         prompt="The candidate is answering technical interview questions about software engineering.",
                         temperature=0.0,
+                        timeout=30.0,  # don't let a hung upstream call tie up the worker indefinitely
                     )
 
                 # With verbose_json, we get segments with no_speech_prob

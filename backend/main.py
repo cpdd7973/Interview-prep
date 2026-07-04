@@ -85,6 +85,11 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
+# Upper bound on a single WS binary audio frame -- comfortably above the
+# largest legitimate chunk observed in testing (~1.3MB for several seconds
+# of speech), bounds worst-case resource use from an oversized/malicious frame.
+MAX_AUDIO_CHUNK_BYTES = 15 * 1024 * 1024  # 15MB
+
 # Create FastAPI app
 app = FastAPI(
     title="Interview Agent System",
@@ -822,6 +827,17 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
 
                     if len(audio_data) < 1000:
                         # Too small — probably silence
+                        continue
+
+                    if len(audio_data) > MAX_AUDIO_CHUNK_BYTES:
+                        # Comfortably above the largest legitimate chunk observed
+                        # in testing (~1.3MB for several seconds of speech) --
+                        # reject rather than decode/upload an oversized frame,
+                        # which could otherwise exhaust disk/memory/CPU.
+                        logger.warning(
+                            f"[{room_id}] 🛡️ Rejecting oversized binary chunk "
+                            f"(size={len(audio_data)}, max={MAX_AUDIO_CHUNK_BYTES})"
+                        )
                         continue
 
                     logger.info(
