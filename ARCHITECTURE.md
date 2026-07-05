@@ -409,9 +409,6 @@ ReportAgent triggers
     ├─► report_mcp.export_pdf()
     │   └─► ReportLab → PDF file generated
     │
-    ├─► report_mcp.email_report_to_admin()
-    │   └─► Gmail API → PDF emailed to admin
-    │
     └─► SQLite → report_path updated
 ```
 

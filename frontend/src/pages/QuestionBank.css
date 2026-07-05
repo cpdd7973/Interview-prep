@@ -184,6 +184,7 @@
   align-items: flex-start;
   margin-bottom: 12px;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .qb-card-title {

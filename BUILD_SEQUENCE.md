@@ -117,11 +117,9 @@ RAM Budget: ~100MB during evaluation
 Tools to implement:
 - `compile_report(evaluation_data, session_data)` - Aggregate data
 - `export_pdf(report_data, output_path)` - Generate PDF
-- `email_report_to_admin(report_path, room_id)` - Send via Gmail
 
 Dependencies:
 - ReportLab for PDF generation
-- Gmail MCP for sending
 
 RAM Budget: ~50MB during PDF generation
 

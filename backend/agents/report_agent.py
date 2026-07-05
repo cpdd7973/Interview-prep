@@ -1,7 +1,6 @@
 """
 Report Agent Node
-Consumes the evaluation results to generate a final PDF report and email it
-to the system administrator.
+Consumes the evaluation results to generate a final PDF report.
 """
 
 from typing import Dict, Any
@@ -9,12 +8,11 @@ import logging
 import os
 
 from agents.state import InterviewState
-from config import settings, REPORTS_DIR
+from config import REPORTS_DIR
 from mcp_servers.report_mcp import (
     report_mcp,
     CompileReportInput,
     ExportPdfInput,
-    EmailReportInput,
 )
 from database import SessionLocal, Evaluation
 
@@ -25,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def report_node(state: InterviewState) -> Dict[str, Any]:
     """
-    LangGraph node for generating and emailing the interview report.
+    LangGraph node for generating the interview report.
     """
     logger.info(
         f"📄 Report Agent generating final document for {state.get('candidate_name')}"
@@ -87,35 +85,6 @@ def report_node(state: InterviewState) -> Dict[str, Any]:
             logger.error(f"Failed to save report_path to DB: {e}")
         finally:
             db.close()
-
-        # 4. Email Admin
-        admin_email = settings.admin_email
-        if admin_email:
-            email_resp = report_mcp.email_report_to_admin(
-                EmailReportInput(
-                    report_path=pdf_path, room_id=room_id, admin_email=admin_email
-                )
-            )
-
-            if not email_resp.get("success"):
-                logger.error(f"⚠️ Failed to email admin: {email_resp.get('error')}")
-                logger.info(
-                    "Report generated but email delivery failed. PDF saved locally."
-                )
-                # The PDF is the primary deliverable and did generate --
-                # don't downgrade overall status for a secondary delivery
-                # failure, but flag it so the caller can record it.
-                return {
-                    **state,
-                    "status": "REPORTED",
-                    "report_path": pdf_path,
-                    "email_failed": True,
-                    "error": f"Report generated but email delivery failed: {email_resp.get('error')}",
-                }
-            else:
-                logger.info(f"✅ Report emailed to {admin_email}")
-        else:
-            logger.warning("⚠️ No admin_email configured. Report saved locally only.")
 
         return {**state, "status": "REPORTED", "report_path": pdf_path}
 

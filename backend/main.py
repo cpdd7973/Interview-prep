@@ -21,7 +21,7 @@ import traceback
 from datetime import datetime, timezone
 
 # LIGHTWEIGHT imports only — heavy deps load inside interview_websocket()
-from config import settings
+from config import settings, REPORTS_DIR
 from database import init_db
 from scheduler import start_scheduler, shutdown_scheduler
 from mcp_servers.session_mcp import session_mcp
@@ -459,6 +459,56 @@ async def get_evaluation(room_id: str, user=Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching evaluation: {e}")
         return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+
+@app.get("/api/evaluations/{room_id}/pdf")
+async def get_evaluation_pdf(room_id: str, user=Depends(get_current_user)):
+    """Download the evaluation report PDF. Only the creator can download it."""
+    from database import SessionLocal, Evaluation, InterviewSession
+    from fastapi.responses import FileResponse
+
+    db: Session = SessionLocal()
+    try:
+        eval_record = db.query(Evaluation).filter(Evaluation.room_id == room_id).first()
+        session_record = (
+            db.query(InterviewSession)
+            .filter(InterviewSession.room_id == room_id)
+            .first()
+        )
+
+        if not eval_record or not session_record or not eval_record.report_path:
+            raise HTTPException(
+                status_code=404, detail="Report PDF not found for this room"
+            )
+
+        if session_record.created_by != user.id:
+            raise HTTPException(
+                status_code=403, detail="You can only view your own evaluations"
+            )
+
+        # Resolve the stored path in an OS-agnostic way. Reports generated on a
+        # Windows host store backslash paths (reports\...pdf) that os.path.exists
+        # can't resolve on Linux/Docker, even though the file is present. Try the
+        # stored path, a forward-slash normalized form, and REPORTS_DIR/basename.
+        stored = eval_record.report_path
+        normalized = stored.replace("\\", "/")
+        filename = os.path.basename(normalized)
+        candidates = [stored, normalized, os.path.join(str(REPORTS_DIR), filename)]
+        resolved = next((p for p in candidates if os.path.exists(p)), None)
+
+        if resolved is None:
+            raise HTTPException(
+                status_code=404, detail="Report PDF file is missing on disk"
+            )
+
+        return FileResponse(resolved, media_type="application/pdf", filename=filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching evaluation PDF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
@@ -999,7 +1049,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         db = SessionLocal()
                         try:
                             logger.info(
-                                "🚀 Starting post-interview pipeline (evaluate → report → email)"
+                                "🚀 Starting post-interview pipeline (evaluate → report)"
                             )
                             result = await interview_graph.ainvoke(state)
 
@@ -1013,14 +1063,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                                 if result_status == "REPORTED":
                                     session.report_generated_at = datetime.utcnow()
                                     session.status = SessionStatus.COMPLETED
-                                    # email_failed is a secondary-delivery issue,
-                                    # not a pipeline failure -- record it without
-                                    # downgrading the overall status.
-                                    session.pipeline_error = (
-                                        result.get("error")
-                                        if result.get("email_failed")
-                                        else None
-                                    )
+                                    session.pipeline_error = None
                                     logger.info(
                                         f"✅ Post-interview pipeline completed for {room_id}"
                                     )

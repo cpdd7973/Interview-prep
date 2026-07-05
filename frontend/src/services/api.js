@@ -169,3 +169,32 @@ export const getEvaluationReport = async (roomId) => {
     throw error;
   }
 };
+
+/**
+ * Download the evaluation report PDF
+ */
+export const downloadEvaluationReportPdf = async (roomId) => {
+  const response = await fetch(`${API_BASE_URL}/api/evaluations/${roomId}/pdf`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP error! status: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${roomId}_report.pdf`;
+  document.body.appendChild(a);
+  a.click();
+
+  // Defer cleanup — revoking the blob URL synchronously after click()
+  // cancels the download in Chrome before it finishes writing the file.
+  setTimeout(() => {
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }, 1000);
+};
