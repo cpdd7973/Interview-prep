@@ -35,17 +35,25 @@ def migrate():
     """)
     print("✅ 'users' table ensured.")
 
-    # 2. Add created_by column to interview_sessions if not exists
+    # 2. Add all missing columns to interview_sessions
     cursor.execute("PRAGMA table_info(interview_sessions)")
     columns = [col[1] for col in cursor.fetchall()]
 
-    if "created_by" not in columns:
-        cursor.execute(
-            "ALTER TABLE interview_sessions ADD COLUMN created_by INTEGER REFERENCES users(id)"
-        )
-        print("✅ 'created_by' column added to interview_sessions.")
-    else:
-        print("ℹ️  'created_by' column already exists.")
+    # Define all columns that may be missing from older databases
+    missing_columns = {
+        "job_description": "TEXT",
+        "joined_at": "DATETIME",
+        "created_by": "INTEGER REFERENCES users(id)",
+    }
+
+    for col_name, col_type in missing_columns.items():
+        if col_name not in columns:
+            cursor.execute(
+                f"ALTER TABLE interview_sessions ADD COLUMN {col_name} {col_type}"
+            )
+            print(f"✅ '{col_name}' column added to interview_sessions.")
+        else:
+            print(f"ℹ️  '{col_name}' column already exists.")
 
     # 3. Create index for created_by if not exists
     cursor.execute("""
