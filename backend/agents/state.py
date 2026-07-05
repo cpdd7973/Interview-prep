@@ -50,7 +50,6 @@ class InterviewState(TypedDict):
 
     # Post-interview pipeline output
     report_path: Optional[str]
-    email_failed: Optional[bool]
 
     # Error state
     error: Optional[str]
