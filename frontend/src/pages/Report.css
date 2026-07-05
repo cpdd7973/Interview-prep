@@ -182,6 +182,67 @@
   font-weight: 400;
 }
 
+/* Detailed Assessment (per-criterion reasoning) */
+.reasoning-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 30px;
+  margin-bottom: 30px;
+}
+
+.reasoning-card h2 {
+  color: #334155;
+  font-size: 1.25rem;
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+
+.reasoning-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.reasoning-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.reasoning-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.reasoning-label {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 1rem;
+}
+
+.reasoning-score {
+  font-weight: 700;
+  color: #3b82f6;
+  font-size: 0.95rem;
+}
+
+.reasoning-bullets {
+  margin: 0;
+  padding-left: 18px;
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.reasoning-bullets li {
+  margin-bottom: 4px;
+}
+
 /* Feedback Section */
 .feedback-card {
   background: white;
@@ -227,9 +288,30 @@
   gap: 8px;
   color: #64748b;
   font-size: 0.95rem;
+  font-family: inherit;
   background: #f8fafc;
+  border: 1px solid #e2e8f0;
   padding: 10px 20px;
   border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pdf-note:hover:not(:disabled) {
+  background: #eff6ff;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+.pdf-note:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.download-error {
+  margin-top: 12px;
+  color: #ef4444;
+  font-size: 0.9rem;
 }
 
 /* Loading/Error States */

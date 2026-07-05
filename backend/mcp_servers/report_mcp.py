@@ -1,6 +1,6 @@
 """
 Report MCP Server
-Generates professional PDF reports and coordinates email delivery.
+Generates professional PDF reports.
 """
 
 from typing import Dict, Any
@@ -22,9 +22,16 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
-from mcp_servers.gmail_mcp import gmail_mcp, SendEmailInput
-
 logger = logging.getLogger(__name__)
+
+# (score_key, criteria_reasoning key, display label) -- order matches the scores table above
+DIMENSION_LABELS = [
+    ("technical_score", "technical", "Technical Knowledge"),
+    ("communication_score", "communication", "Communication Clarity"),
+    ("problem_solving_score", "problem_solving", "Problem Solving"),
+    ("behavioral_score", "behavioral", "Behavioral Fit"),
+    ("confidence_score", "confidence", "Confidence & Completeness"),
+]
 
 
 # Input Schemas
@@ -38,12 +45,6 @@ class ExportPdfInput(BaseModel):
     output_path: str = Field(..., description="Destination PDF file path")
 
 
-class EmailReportInput(BaseModel):
-    report_path: str = Field(..., description="Path to generated PDF")
-    room_id: str = Field(..., description="Session room ID")
-    admin_email: str = Field(..., description="Admin email to receive the report")
-
-
 class ReportMCPServer:
     def __init__(self):
         self.name = "report-mcp-server"
@@ -51,7 +52,6 @@ class ReportMCPServer:
         self.tools = {
             "compile_report": self.compile_report,
             "export_pdf": self.export_pdf,
-            "email_report_to_admin": self.email_report_to_admin,
         }
 
     def compile_report(self, input_data: CompileReportInput) -> Dict[str, Any]:
@@ -270,6 +270,59 @@ class ReportMCPServer:
             elements.append(ot)
             elements.append(Spacer(1, 20))
 
+            # === DETAILED ASSESSMENT (per-dimension reasoning) ===
+            criteria_reasoning = eval_data.get("criteria_reasoning", {}) or {}
+            if criteria_reasoning:
+                elements.append(Paragraph("Detailed Assessment", heading_style))
+                elements.append(
+                    HRFlowable(
+                        width="100%", thickness=1, color=colors.HexColor("#e2e8f0")
+                    )
+                )
+                elements.append(Spacer(1, 8))
+
+                dim_heading_style = ParagraphStyle(
+                    "DimHeading",
+                    parent=styles["Normal"],
+                    fontSize=10.5,
+                    fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#1e293b"),
+                    spaceBefore=10,
+                    spaceAfter=2,
+                )
+                bullet_style = ParagraphStyle(
+                    "Bullet",
+                    parent=styles["Normal"],
+                    fontSize=9.5,
+                    leading=13,
+                    leftIndent=14,
+                    bulletIndent=2,
+                    textColor=colors.HexColor("#334155"),
+                    spaceAfter=2,
+                )
+
+                score_lookup = {
+                    "technical_score": tech,
+                    "communication_score": comm,
+                    "problem_solving_score": prob,
+                    "behavioral_score": behav,
+                    "confidence_score": conf,
+                }
+                for score_key, reasoning_key, label in DIMENSION_LABELS:
+                    bullets = criteria_reasoning.get(reasoning_key) or []
+                    if not bullets:
+                        continue
+                    dim_score = score_lookup.get(score_key, 0)
+                    elements.append(
+                        Paragraph(
+                            f"{label} &mdash; {dim_score:.1f}/10", dim_heading_style
+                        )
+                    )
+                    for bullet in bullets:
+                        safe = str(bullet).replace("<", "&lt;").replace(">", "&gt;")
+                        elements.append(Paragraph(f"•  {safe}", bullet_style))
+                elements.append(Spacer(1, 16))
+
             # === QUALITATIVE FEEDBACK ===
             elements.append(Paragraph("Qualitative Feedback", heading_style))
             elements.append(
@@ -335,55 +388,6 @@ class ReportMCPServer:
             return "Average"
         else:
             return "Poor"
-
-    def email_report_to_admin(self, input_data: EmailReportInput) -> Dict[str, Any]:
-        """Email report PDF to admin as attachment."""
-        try:
-            if not os.path.exists(input_data.report_path):
-                return {
-                    "success": False,
-                    "error": f"PDF not found at {input_data.report_path}",
-                }
-
-            subject = f"📋 Interview Report: {input_data.room_id}"
-            body_html = f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px;">
-                <h2 style="color: #1e40af;">Interview Report Ready</h2>
-                <p>The interview evaluation for session <b>{input_data.room_id}</b> has been completed.</p>
-                <p>Please find the detailed PDF report attached to this email.</p>
-                <hr style="border: 1px solid #e2e8f0;">
-                <p style="color: #64748b; font-size: 12px;">
-                    <i>— Interview Agent System</i>
-                </p>
-            </div>
-            """
-
-            email_input = SendEmailInput(
-                to_email=input_data.admin_email,
-                subject=subject,
-                body=body_html,
-                is_html=True,
-                attachment_path=input_data.report_path,  # Attach the PDF!
-            )
-
-            resp = gmail_mcp.send_email(email_input)
-
-            if resp.get("success"):
-                logger.info(
-                    f"✅ Report emailed to {input_data.admin_email} via {resp.get('method', 'unknown')}"
-                )
-                return {
-                    "success": True,
-                    "message": f"Report sent to {input_data.admin_email}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": resp.get("error", "Unknown email error"),
-                }
-        except Exception as e:
-            logger.error(f"❌ Error emailing admin: {e}")
-            return {"success": False, "error": str(e)}
 
 
 # Singleton instance

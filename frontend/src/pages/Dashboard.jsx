@@ -111,7 +111,7 @@ export default function Dashboard() {
 
   const filteredInterviews = interviews.filter(i => {
     if (currentTab === 'PENDING') return i.status === 'PENDING';
-    if (currentTab === 'ACTIVE') return ['ACTIVE', 'DISCONNECTED'].includes(i.status) || (i.status === 'COMPLETED' && !i.report_generated_at);
+    if (currentTab === 'ACTIVE') return ['ACTIVE', 'DISCONNECTED', 'EVALUATION_FAILED', 'REPORT_FAILED'].includes(i.status) || (i.status === 'COMPLETED' && !i.report_generated_at);
     if (currentTab === 'EXPIRED') return i.status === 'EXPIRED';
     if (currentTab === 'COMPLETED') return i.status === 'COMPLETED' && i.report_generated_at !== null;
     return true;
@@ -219,7 +219,7 @@ export default function Dashboard() {
             {tabs.map(tab => {
               const count = interviews.filter(i => {
                 if (tab === 'PENDING') return i.status === 'PENDING';
-                if (tab === 'ACTIVE') return ['ACTIVE', 'DISCONNECTED'].includes(i.status) || (i.status === 'COMPLETED' && !i.report_generated_at);
+                if (tab === 'ACTIVE') return ['ACTIVE', 'DISCONNECTED', 'EVALUATION_FAILED', 'REPORT_FAILED'].includes(i.status) || (i.status === 'COMPLETED' && !i.report_generated_at);
                 if (tab === 'EXPIRED') return i.status === 'EXPIRED';
                 if (tab === 'COMPLETED') return i.status === 'COMPLETED' && i.report_generated_at !== null;
                 return false;
@@ -314,6 +314,12 @@ function InterviewCard({ interview, currentTab, handleCancel, isConfirming }) {
       const reconnectDeadline = disconnectedTime + (15 * 60 * 1000);
       const msLeft = reconnectDeadline - now;
       UIStatus = <span style={{ color: '#f59e0b', fontWeight: 600, fontSize: '0.875rem' }}>⚠️ Reconnecting... {formatTimeLeft(msLeft)}</span>;
+    } else if (interview.status === 'EVALUATION_FAILED') {
+      UIStatus = <span style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.875rem' }}>⚠️ Evaluation Failed</span>;
+      interactive = false;
+    } else if (interview.status === 'REPORT_FAILED') {
+      UIStatus = <span style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.875rem' }}>⚠️ Report Failed</span>;
+      interactive = false;
     } else if (interview.report_retry_count >= 3 && interview.finished_at) {
       UIStatus = <span style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.875rem' }}>⚠️ Report Failed</span>;
       interactive = false;

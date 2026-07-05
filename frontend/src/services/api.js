@@ -114,9 +114,7 @@ export const cancelInterview = async (roomId) => {
 export const getQuestionsByRole = async (role) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/questions?role=${role}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -137,9 +135,7 @@ export const addQuestion = async (questionData) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/questions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(questionData),
     });
 
@@ -160,9 +156,7 @@ export const addQuestion = async (questionData) => {
 export const getEvaluationReport = async (roomId) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/evaluations/${roomId}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -174,4 +168,33 @@ export const getEvaluationReport = async (roomId) => {
     console.error('Error fetching evaluation:', error);
     throw error;
   }
+};
+
+/**
+ * Download the evaluation report PDF
+ */
+export const downloadEvaluationReportPdf = async (roomId) => {
+  const response = await fetch(`${API_BASE_URL}/api/evaluations/${roomId}/pdf`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP error! status: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${roomId}_report.pdf`;
+  document.body.appendChild(a);
+  a.click();
+
+  // Defer cleanup — revoking the blob URL synchronously after click()
+  // cancels the download in Chrome before it finishes writing the file.
+  setTimeout(() => {
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }, 1000);
 };

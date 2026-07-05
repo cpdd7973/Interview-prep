@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getEvaluationReport } from '../services/api';
+import { getEvaluationReport, downloadEvaluationReportPdf } from '../services/api';
 import './Report.css'; // Importing the premium styles
 
 export default function Report() {
@@ -8,6 +8,8 @@ export default function Report() {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -27,6 +29,18 @@ export default function Report() {
 
     fetchReport();
   }, [roomId]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadEvaluationReportPdf(roomId);
+    } catch (err) {
+      setDownloadError(err.message || "Failed to download PDF.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (loading) return <div className="report-loading">Loading evaluation report...</div>;
   if (error) return <div className="report-error">Error: {error}</div>;
@@ -100,6 +114,35 @@ export default function Report() {
         </div>
       </section>
 
+      {reportData.criteria_reasoning && Object.keys(reportData.criteria_reasoning).length > 0 && (
+        <section className="reasoning-card">
+          <h2>Detailed Assessment</h2>
+          <div className="reasoning-grid">
+            {[
+              { key: 'technical', label: 'Technical', score: reportData.technical_score },
+              { key: 'communication', label: 'Communication', score: reportData.communication_score },
+              { key: 'problem_solving', label: 'Problem Solving', score: reportData.problem_solving_score },
+              { key: 'behavioral', label: 'Behavioral', score: reportData.behavioral_score },
+              { key: 'confidence', label: 'Confidence', score: reportData.confidence_score },
+            ].map(({ key, label, score }) => {
+              const bullets = reportData.criteria_reasoning[key];
+              if (!bullets || bullets.length === 0) return null;
+              return (
+                <div className="reasoning-item" key={key}>
+                  <div className="reasoning-item-header">
+                    <span className="reasoning-label">{label}</span>
+                    <span className="reasoning-score">{Number(score).toFixed(1)}/10</span>
+                  </div>
+                  <ul className="reasoning-bullets">
+                    {bullets.map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <section className="feedback-card">
         <h2>
           {/* Subtle icon placeholder */}
@@ -115,7 +158,7 @@ export default function Report() {
 
       {reportData.report_path && (
         <footer className="report-footer">
-          <div className="pdf-note">
+          <button className="pdf-note" onClick={handleDownload} disabled={downloading}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
@@ -123,8 +166,9 @@ export default function Report() {
               <line x1="16" y1="17" x2="8" y2="17"></line>
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
-            A PDF version of this report has been safely generated and emailed to the admin.
-          </div>
+            {downloading ? 'Preparing download...' : 'Download PDF Report'}
+          </button>
+          {downloadError && <p className="download-error">{downloadError}</p>}
         </footer>
       )}
     </main>

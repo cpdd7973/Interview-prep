@@ -21,7 +21,7 @@ import traceback
 from datetime import datetime, timezone
 
 # LIGHTWEIGHT imports only — heavy deps load inside interview_websocket()
-from config import settings
+from config import settings, REPORTS_DIR
 from database import init_db
 from scheduler import start_scheduler, shutdown_scheduler
 from mcp_servers.session_mcp import session_mcp
@@ -85,6 +85,11 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
+# Upper bound on a single WS binary audio frame -- comfortably above the
+# largest legitimate chunk observed in testing (~1.3MB for several seconds
+# of speech), bounds worst-case resource use from an oversized/malicious frame.
+MAX_AUDIO_CHUNK_BYTES = 15 * 1024 * 1024  # 15MB
+
 # Create FastAPI app
 app = FastAPI(
     title="Interview Agent System",
@@ -96,7 +101,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -335,17 +340,35 @@ async def cancel_interview(room_id: str, user=Depends(get_current_user)):
 
 # Get transcript endpoint
 @app.get("/api/interviews/{room_id}/transcript")
-async def get_transcript(room_id: str):
+async def get_transcript(room_id: str, user=Depends(get_current_user)):
     """
-    Get full transcript for an interview.
+    Get full transcript for an interview. Only the creator can view it.
     """
+    from database import SessionLocal, InterviewSession
+
+    db = SessionLocal()
+    try:
+        session = (
+            db.query(InterviewSession)
+            .filter(InterviewSession.room_id == room_id)
+            .first()
+        )
+        if not session:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        if session.created_by != user.id:
+            raise HTTPException(
+                status_code=403, detail="You can only view your own interviews"
+            )
+    finally:
+        db.close()
+
     result = session_mcp.get_transcript(room_id)
     return result
 
 
 # Questions endpoints
 @app.get("/api/questions")
-async def get_questions(role: str = None):
+async def get_questions(role: str = None, user=Depends(get_current_user)):
     """Get questions by role."""
     from mcp_servers.question_bank_mcp import question_bank_mcp, GetQuestionsInput
 
@@ -359,7 +382,7 @@ async def get_questions(role: str = None):
 
 
 @app.post("/api/questions")
-async def add_question(question_data: dict):
+async def add_question(question_data: dict, user=Depends(get_current_user)):
     """Add a new question."""
     from mcp_servers.question_bank_mcp import question_bank_mcp, AddQuestionInput
     from database import DifficultyLevel
@@ -387,8 +410,8 @@ async def add_question(question_data: dict):
 
 # Evaluation endpoint
 @app.get("/api/evaluations/{room_id}")
-async def get_evaluation(room_id: str):
-    """Get evaluation report for an interview."""
+async def get_evaluation(room_id: str, user=Depends(get_current_user)):
+    """Get evaluation report for an interview. Only the creator can view it."""
     from database import SessionLocal, Evaluation, InterviewSession
 
     db: Session = SessionLocal()
@@ -402,6 +425,11 @@ async def get_evaluation(room_id: str):
 
         if not eval_record or not session_record:
             return {"success": False, "error": "Evaluation not found for this room"}
+
+        if session_record.created_by != user.id:
+            raise HTTPException(
+                status_code=403, detail="You can only view your own evaluations"
+            )
 
         return {
             "success": True,
@@ -422,12 +450,65 @@ async def get_evaluation(room_id: str):
                 "confidence_score": eval_record.confidence_score,
                 "overall_score": eval_record.overall_score,
                 "qualitative_feedback": eval_record.qualitative_feedback,
+                "criteria_reasoning": eval_record.criteria_reasoning or {},
                 "report_path": eval_record.report_path,
             },
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching evaluation: {e}")
         return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+
+@app.get("/api/evaluations/{room_id}/pdf")
+async def get_evaluation_pdf(room_id: str, user=Depends(get_current_user)):
+    """Download the evaluation report PDF. Only the creator can download it."""
+    from database import SessionLocal, Evaluation, InterviewSession
+    from fastapi.responses import FileResponse
+
+    db: Session = SessionLocal()
+    try:
+        eval_record = db.query(Evaluation).filter(Evaluation.room_id == room_id).first()
+        session_record = (
+            db.query(InterviewSession)
+            .filter(InterviewSession.room_id == room_id)
+            .first()
+        )
+
+        if not eval_record or not session_record or not eval_record.report_path:
+            raise HTTPException(
+                status_code=404, detail="Report PDF not found for this room"
+            )
+
+        if session_record.created_by != user.id:
+            raise HTTPException(
+                status_code=403, detail="You can only view your own evaluations"
+            )
+
+        # Resolve the stored path in an OS-agnostic way. Reports generated on a
+        # Windows host store backslash paths (reports\...pdf) that os.path.exists
+        # can't resolve on Linux/Docker, even though the file is present. Try the
+        # stored path, a forward-slash normalized form, and REPORTS_DIR/basename.
+        stored = eval_record.report_path
+        normalized = stored.replace("\\", "/")
+        filename = os.path.basename(normalized)
+        candidates = [stored, normalized, os.path.join(str(REPORTS_DIR), filename)]
+        resolved = next((p for p in candidates if os.path.exists(p)), None)
+
+        if resolved is None:
+            raise HTTPException(
+                status_code=404, detail="Report PDF file is missing on disk"
+            )
+
+        return FileResponse(resolved, media_type="application/pdf", filename=filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching evaluation PDF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
@@ -477,6 +558,14 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 session.scheduled_at.isoformat() if session.scheduled_at else ""
             ),
             "daily_room_url": session.daily_room_url or "",
+            "skill_plan": session.skill_plan,
+            "topics_covered": session.topics_covered,
+            "current_phase": session.current_phase,
+            "interview_started_at": (
+                session.interview_started_at.isoformat()
+                if session.interview_started_at
+                else None
+            ),
         }
         db.close()
         return data
@@ -532,7 +621,23 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
         "current_question_id": current_q_id,
         "evaluation": None,
         "error": None,
+        # JD-aware interview tracking — restored from the DB so a
+        # reconnect doesn't reset the skill plan/phase/30-min timer.
+        "skill_plan": session_data.get("skill_plan"),
+        "topics_covered": session_data.get("topics_covered") or [],
+        "current_phase": session_data.get("current_phase") or "introduction",
+        "interview_started_at": session_data.get("interview_started_at")
+        or datetime.utcnow().isoformat(),
     }
+
+    # Persist interview_started_at exactly once, on the very first connection
+    # for this room. Subsequent reconnects read it back instead of overwriting it.
+    if not session_data.get("interview_started_at"):
+        await asyncio.to_thread(
+            session_mcp.update_interview_state,
+            room_id=room_id,
+            interview_started_at=chat_state["interview_started_at"],
+        )
 
     try:
         # Wait for the frontend to signal it is ready before sending the initial greeting
@@ -615,6 +720,25 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                     if "questions_asked" in agent_result:
                         chat_state["questions_asked"].extend(
                             agent_result["questions_asked"]
+                        )
+                    # JD-aware state propagation
+                    jd_state_update = {}
+                    if "skill_plan" in agent_result:
+                        chat_state["skill_plan"] = agent_result["skill_plan"]
+                        jd_state_update["skill_plan"] = agent_result["skill_plan"]
+                    if "topics_covered" in agent_result:
+                        chat_state["topics_covered"] = agent_result["topics_covered"]
+                        jd_state_update["topics_covered"] = agent_result[
+                            "topics_covered"
+                        ]
+                    if "current_phase" in agent_result:
+                        chat_state["current_phase"] = agent_result["current_phase"]
+                        jd_state_update["current_phase"] = agent_result["current_phase"]
+                    if jd_state_update:
+                        await asyncio.to_thread(
+                            session_mcp.update_interview_state,
+                            room_id=room_id,
+                            **jd_state_update,
                         )
 
                     initial_response = agent_result["messages"][-1].content
@@ -720,7 +844,10 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             logger.info(f"[{room_id} (Browser STT)]: {spoken_text}")
                         else:
                             continue
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(
+                            f"[{room_id}] Failed to parse WS text message: {e}"
+                        )
                         continue
 
                 elif "bytes" in message:
@@ -750,6 +877,17 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         # Too small — probably silence
                         continue
 
+                    if len(audio_data) > MAX_AUDIO_CHUNK_BYTES:
+                        # Comfortably above the largest legitimate chunk observed
+                        # in testing (~1.3MB for several seconds of speech) --
+                        # reject rather than decode/upload an oversized frame,
+                        # which could otherwise exhaust disk/memory/CPU.
+                        logger.warning(
+                            f"[{room_id}] 🛡️ Rejecting oversized binary chunk "
+                            f"(size={len(audio_data)}, max={MAX_AUDIO_CHUNK_BYTES})"
+                        )
+                        continue
+
                     logger.info(
                         f"[{room_id}] Transcribing {len(audio_data)} bytes via Groq Whisper..."
                     )
@@ -764,33 +902,15 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                             if len(spoken_text) < 3:
                                 continue
 
-                            # ECHO FILTER: Reject common speaker-echo transcriptions.
-                            # When the mic picks up the AI's voice from speakers, Whisper
-                            # typically transcribes it as "Thank you.", "you", etc.
-                            # Real candidate answers have at least 5 words.
-                            word_count = len(spoken_text.split())
-                            echo_phrases = {
-                                "thank you",
-                                "thank you.",
-                                "you",
-                                "okay",
-                                "okay.",
-                                "yes",
-                                "yes.",
-                                "no",
-                                "no.",
-                                "um",
-                                "uh",
-                            }
-                            if (
-                                word_count < 5
-                                and spoken_text.lower().strip(".!?,") in echo_phrases
-                            ):
-                                logger.debug(
-                                    f"[{room_id}] Filtered echo: '{spoken_text}' (likely speaker echo, not candidate)"
-                                )
-                                continue
-
+                            # Hallucination/echo filtering (silence, video-outro
+                            # boilerplate, speaker echo, repeated phrases, etc.)
+                            # is handled entirely inside voice_mcp.transcribe_audio_groq
+                            # -- see is_hallucinated_transcript(). Previously this
+                            # handler had its own separate, smaller, divergent
+                            # phrase list here (including "yes"/"no", which
+                            # incorrectly filtered legitimate candidate answers to
+                            # yes/no questions); consolidated into one filter to
+                            # avoid the two lists drifting apart.
                             logger.info(f"[{room_id} (Groq Whisper)]: {spoken_text}")
                         else:
                             logger.debug(
@@ -837,6 +957,23 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                 if "questions_asked" in agent_result:
                     chat_state["questions_asked"].extend(
                         agent_result["questions_asked"]
+                    )
+                # JD-aware state propagation
+                jd_state_update = {}
+                if "skill_plan" in agent_result:
+                    chat_state["skill_plan"] = agent_result["skill_plan"]
+                    jd_state_update["skill_plan"] = agent_result["skill_plan"]
+                if "topics_covered" in agent_result:
+                    chat_state["topics_covered"] = agent_result["topics_covered"]
+                    jd_state_update["topics_covered"] = agent_result["topics_covered"]
+                if "current_phase" in agent_result:
+                    chat_state["current_phase"] = agent_result["current_phase"]
+                    jd_state_update["current_phase"] = agent_result["current_phase"]
+                if jd_state_update:
+                    await asyncio.to_thread(
+                        session_mcp.update_interview_state,
+                        room_id=room_id,
+                        **jd_state_update,
                     )
 
                 ai_response = agent_result["messages"][-1].content
@@ -912,9 +1049,9 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         db = SessionLocal()
                         try:
                             logger.info(
-                                "🚀 Starting post-interview pipeline (evaluate → report → email)"
+                                "🚀 Starting post-interview pipeline (evaluate → report)"
                             )
-                            await interview_graph.ainvoke(state)
+                            result = await interview_graph.ainvoke(state)
 
                             session = (
                                 db.query(InterviewSession)
@@ -922,12 +1059,42 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                                 .first()
                             )
                             if session:
-                                session.report_generated_at = datetime.utcnow()
-                                session.status = SessionStatus.COMPLETED
+                                result_status = result.get("status")
+                                if result_status == "REPORTED":
+                                    session.report_generated_at = datetime.utcnow()
+                                    session.status = SessionStatus.COMPLETED
+                                    session.pipeline_error = None
+                                    logger.info(
+                                        f"✅ Post-interview pipeline completed for {room_id}"
+                                    )
+                                elif result_status == "EVALUATION_FAILED":
+                                    session.status = SessionStatus.EVALUATION_FAILED
+                                    session.pipeline_error = result.get("error")
+                                    session.report_retry_count = (
+                                        session.report_retry_count or 0
+                                    ) + 1
+                                    logger.error(
+                                        f"❌ Evaluation failed for {room_id}: {result.get('error')}"
+                                    )
+                                elif result_status == "REPORT_FAILED":
+                                    session.status = SessionStatus.REPORT_FAILED
+                                    session.pipeline_error = result.get("error")
+                                    session.report_retry_count = (
+                                        session.report_retry_count or 0
+                                    ) + 1
+                                    logger.error(
+                                        f"❌ Report generation failed for {room_id}: {result.get('error')}"
+                                    )
+                                else:
+                                    # Graph ended in an unexpected state -- don't
+                                    # silently mark it complete.
+                                    session.status = SessionStatus.EVALUATION_FAILED
+                                    session.pipeline_error = f"Pipeline ended in unexpected status: {result_status}"
+                                    logger.error(
+                                        f"❌ Post-interview pipeline for {room_id} ended in "
+                                        f"unexpected status: {result_status}"
+                                    )
                                 db.commit()
-                            logger.info(
-                                f"✅ Post-interview pipeline completed for {room_id}"
-                            )
                         except Exception as pipe_err:
                             logger.error(
                                 f"❌ Post-interview pipeline failed: {pipe_err}",
@@ -942,7 +1109,8 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                                 session.report_retry_count = (
                                     getattr(session, "report_retry_count", 0) + 1
                                 )
-                                session.status = SessionStatus.ACTIVE
+                                session.status = SessionStatus.EVALUATION_FAILED
+                                session.pipeline_error = str(pipe_err)
                                 db.commit()
                         finally:
                             db.close()

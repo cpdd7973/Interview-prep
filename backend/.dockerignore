@@ -1,0 +1,13 @@
+*.db
+*.log
+logs/
+__pycache__/
+*.pyc
+.env
+scripts/
+*_ids.txt
+.git
+.mypy_cache/
+.ruff_cache/
+test_*.py
+pytest.ini

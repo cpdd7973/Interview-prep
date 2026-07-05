@@ -90,7 +90,8 @@ def gws_available() -> bool:
 
         _gws_auth_verified = True
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"GWS auth verification failed: {type(e).__name__}: {e}")
         _gws_auth_verified = False
         return False
 

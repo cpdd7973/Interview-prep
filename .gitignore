@@ -42,3 +42,10 @@ frontend/dist/
 backend/reports/*.pdf
 !backend/reports/test_report.pdf
 
+# Debug/one-off scripts and dumped ID lists (may contain room_id credentials)
+*_ids.txt
+traceback_log.txt
+
+# Playwright MCP session artifacts (screenshots/snapshots from live testing)
+.playwright-mcp/
+
