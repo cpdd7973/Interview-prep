@@ -1,8 +1,11 @@
 # Core Framework
 fastapi==0.115.0
 uvicorn[standard]==0.27.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
+# pydantic bumped to >=2.7.4 -- required because the unpinned langchain range
+# resolves to 1.3.x, which needs pydantic>=2.7.4 (the old 2.5.3 pin made the
+# image unbuildable from scratch). fastapi 0.115.0 allows pydantic <3.0.
+pydantic==2.13.4
+pydantic-settings==2.14.2
 
 # Database
 sqlalchemy==2.0.25
@@ -33,17 +36,17 @@ google-api-python-client==2.116.0
 
 # HTTP & WebRTC
 httpx==0.26.0
-requests==2.32.0
-aiohttp==3.13.4
+requests==2.34.2
+aiohttp==3.14.1
 
 # PDF Generation
 reportlab==4.0.9
-pypdf==5.1.0
+pypdf==6.14.2
 
 # Utilities
-python-dotenv==1.0.0
-python-multipart==0.0.12
-python-jose[cryptography]==3.3.0
+python-dotenv==1.2.2
+python-multipart==0.0.32
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 pygments==2.20.0
 
@@ -55,5 +58,12 @@ python-dateutil==2.8.2
 pytz==2024.1
 
 # Audio Processing
-numpy==2.4.2
+# Kept on numpy 1.x: the pinned chromadb 0.4.22 uses np.float_, removed in
+# NumPy 2.0 -- numpy 2.x makes a fresh image unbuildable at import time.
+numpy==1.26.4
 soundfile==0.12.1
+
+# Security floor pins (transitive deps with known advisories)
+cryptography>=48.0.1
+urllib3>=2.7.0
+idna>=3.15
