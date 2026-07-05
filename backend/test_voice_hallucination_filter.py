@@ -41,10 +41,16 @@ def test_normalize_transcript():
 
 
 def test_find_repeated_phrase():
-    assert _find_repeated_phrase(normalize_transcript("Thank you. Thank you.").split()) == "thank you"
+    assert (
+        _find_repeated_phrase(normalize_transcript("Thank you. Thank you.").split())
+        == "thank you"
+    )
     assert _find_repeated_phrase(["thankyou"] * 3) == "thankyou"
     # Genuine non-repeating answer must not be flagged.
-    assert _find_repeated_phrase(normalize_transcript("It's the Big O notation.").split()) is None
+    assert (
+        _find_repeated_phrase(normalize_transcript("It's the Big O notation.").split())
+        is None
+    )
     assert _find_repeated_phrase([]) is None
     assert _find_repeated_phrase(["one"]) is None
 
@@ -67,21 +73,28 @@ def test_concatenated_hallucination_fragments_are_filtered():
     periodic repetition, so it slipped through checks #1 and #2 and got
     sent to the interviewer as a real candidate answer.
     """
-    assert is_hallucinated_transcript(
-        "I'm going to go to the next slide. Thank you. Thank you."
-    ) is True
+    assert (
+        is_hallucinated_transcript(
+            "I'm going to go to the next slide. Thank you. Thank you."
+        )
+        is True
+    )
     # A lone filler word must NOT be caught by the same mechanism -- it
     # needs to fall through to the dedicated (corroboration-based) filler
     # check instead, which is deliberately more conservative.
     assert is_hallucinated_transcript("um", avg_no_speech_prob=0.1) is False
     # A real multi-sentence answer that happens to include a genuine
     # "thank you" must not be swept up just because it's multi-sentence.
-    assert is_hallucinated_transcript(
-        "Thank you. My experience is mostly with FastAPI and PostgreSQL."
-    ) is False
-    assert is_hallucinated_transcript(
-        "I use REST APIs. I also use GraphQL sometimes."
-    ) is False
+    assert (
+        is_hallucinated_transcript(
+            "Thank you. My experience is mostly with FastAPI and PostgreSQL."
+        )
+        is False
+    )
+    assert (
+        is_hallucinated_transcript("I use REST APIs. I also use GraphQL sometimes.")
+        is False
+    )
 
 
 def test_legitimate_short_answers_are_not_filtered():
@@ -128,7 +141,9 @@ def test_compression_ratio_branch_respects_word_count_cap():
 
 
 def test_is_silent_dbfs_pure_thresholds():
-    assert _is_silent_dbfs(float("-inf")) is True  # pydub reports this for pure digital silence
+    assert (
+        _is_silent_dbfs(float("-inf")) is True
+    )  # pydub reports this for pure digital silence
     assert _is_silent_dbfs(-45.0) is True
     assert _is_silent_dbfs(-40.0) is False  # exactly at threshold -> not silent
     assert _is_silent_dbfs(-10.0) is False

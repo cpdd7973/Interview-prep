@@ -223,7 +223,9 @@ class Evaluation(Base):
     confidence_score = Column(Float, nullable=False)  # 0-10
     overall_score = Column(Float, nullable=False)  # 0-10
     qualitative_feedback = Column(Text, nullable=True)
-    criteria_reasoning = Column(JSON, nullable=True)  # {"technical": [...], "communication": [...], ...}
+    criteria_reasoning = Column(
+        JSON, nullable=True
+    )  # {"technical": [...], "communication": [...], ...}
     report_path = Column(String(500), nullable=True)  # Path to generated PDF
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

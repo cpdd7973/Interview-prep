@@ -33,7 +33,13 @@ def extract_json(content: str) -> str:
     return content.strip()
 
 
-DIMENSION_KEYS = ["technical", "communication", "problem_solving", "behavioral", "confidence"]
+DIMENSION_KEYS = [
+    "technical",
+    "communication",
+    "problem_solving",
+    "behavioral",
+    "confidence",
+]
 
 
 def normalize_criteria_reasoning(raw: Any) -> Dict[str, List[str]]:
@@ -173,7 +179,9 @@ Candidate Answer: {input_data.answer}"""
             prob = float(result.get("problem_solving_score", 0))
             behav = float(result.get("behavioral_score", 0))
             conf = float(result.get("confidence_score", 0))
-            criteria_reasoning = normalize_criteria_reasoning(result.get("criteria_reasoning"))
+            criteria_reasoning = normalize_criteria_reasoning(
+                result.get("criteria_reasoning")
+            )
 
             # Compute mathematically to avoid LLM hallucinations
             overall = round(

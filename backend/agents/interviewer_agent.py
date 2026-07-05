@@ -186,13 +186,19 @@ def extract_json(text: str) -> dict:
         }
 
 
-async def extract_skill_plan(job_role: str, job_description: str) -> Dict[str, List[str]]:
+async def extract_skill_plan(
+    job_role: str, job_description: str
+) -> Dict[str, List[str]]:
     """
     Extract a structured skill plan from the JD via a fast LLM call.
     Called once at the very start of the interview.
     Returns: {"foundation_skills": [...], "core_skills": [...], "secondary_skills": [...]}
     """
-    jd_text = job_description if job_description and job_description.strip() else "No explicit job description provided."
+    jd_text = (
+        job_description
+        if job_description and job_description.strip()
+        else "No explicit job description provided."
+    )
 
     prompt = SKILL_EXTRACTION_PROMPT.format(
         job_role=job_role,
@@ -200,9 +206,7 @@ async def extract_skill_plan(job_role: str, job_description: str) -> Dict[str, L
     )
 
     try:
-        response_text = await llm_client.invoke_async(
-            [SystemMessage(content=prompt)]
-        )
+        response_text = await llm_client.invoke_async([SystemMessage(content=prompt)])
         plan = extract_json(response_text)
 
         # Validate structure
@@ -251,14 +255,20 @@ def determine_phase(topics_covered: List[str], skill_plan: Dict[str, List[str]])
 
     # Check how many skills from each category have been touched
     foundation_covered = sum(
-        1 for skill in foundation if any(_topic_matches_skill(t, skill) for t in topics_covered)
+        1
+        for skill in foundation
+        if any(_topic_matches_skill(t, skill) for t in topics_covered)
     )
     core_covered = sum(
-        1 for skill in core if any(_topic_matches_skill(t, skill) for t in topics_covered)
+        1
+        for skill in core
+        if any(_topic_matches_skill(t, skill) for t in topics_covered)
     )
 
     # Introduction is only the very first exchange
-    if len(topics_covered) <= 1 and any(t.lower() == "introduction" for t in topics_covered):
+    if len(topics_covered) <= 1 and any(
+        t.lower() == "introduction" for t in topics_covered
+    ):
         return "introduction"
 
     # If we haven't covered enough foundation skills yet
@@ -311,7 +321,9 @@ def get_suggested_question(
         pool = topic_matches or questions
         return random.choice(pool).get("question_text")
     except Exception as e:
-        logger.warning(f"get_suggested_question failed, LLM will improvise instead: {e}")
+        logger.warning(
+            f"get_suggested_question failed, LLM will improvise instead: {e}"
+        )
         return None
 
 
@@ -405,7 +417,9 @@ async def _override_premature_end(
         ),
         original_spoken_response=original_spoken_response,
     )
-    corrective_messages = [SystemMessage(content=correction_prompt)] + conversation_messages
+    corrective_messages = [
+        SystemMessage(content=correction_prompt)
+    ] + conversation_messages
 
     try:
         corrective_text = await llm_client.invoke_async(corrective_messages)
@@ -433,9 +447,13 @@ async def _override_premature_end(
         )
 
     fallback_topic = (
-        topics_remaining[0] if topics_remaining else "a few more areas relevant to the role"
+        topics_remaining[0]
+        if topics_remaining
+        else "a few more areas relevant to the role"
     )
-    return {"spoken_response": FALLBACK_TRANSITION_TEMPLATE.format(topic=fallback_topic)}
+    return {
+        "spoken_response": FALLBACK_TRANSITION_TEMPLATE.format(topic=fallback_topic)
+    }
 
 
 async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
@@ -482,7 +500,9 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         + skill_plan.get("core_skills", [])
         + skill_plan.get("secondary_skills", [])
     )
-    topics_remaining = [s for s in all_skills if s.lower() not in [t.lower() for t in topics_covered]]
+    topics_remaining = [
+        s for s in all_skills if s.lower() not in [t.lower() for t in topics_covered]
+    ]
 
     # --- Step 3: Calculate elapsed time ---
     elapsed_minutes = calculate_elapsed_minutes(state.get("interview_started_at"))
@@ -519,7 +539,9 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         core_skills=", ".join(skill_plan.get("core_skills", [])) or "N/A",
         secondary_skills=", ".join(skill_plan.get("secondary_skills", [])) or "N/A",
         topics_covered=", ".join(topics_covered) if topics_covered else "None yet",
-        topics_remaining=", ".join(topics_remaining) if topics_remaining else "All topics covered",
+        topics_remaining=(
+            ", ".join(topics_remaining) if topics_remaining else "All topics covered"
+        ),
         current_phase=current_phase,
         suggested_question_section=suggested_question_section,
         interview_start_time=state.get("interview_started_at", "just now"),
@@ -571,7 +593,9 @@ async def interviewer_node(state: InterviewState) -> Dict[str, Any]:
         # do not reuse the LLM's self-reported phase here, since that is
         # exactly what caused the premature end_interview decision.
         topics_remaining_now = [
-            s for s in all_skills if s.lower() not in [t.lower() for t in topics_covered]
+            s
+            for s in all_skills
+            if s.lower() not in [t.lower() for t in topics_covered]
         ]
         phase_now = determine_phase(topics_covered, skill_plan)
 

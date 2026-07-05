@@ -35,13 +35,11 @@ try:
     # approximate interview_started_at from activated_at rather than
     # leaving it NULL (which would reset the 30-minute timer to "now"
     # on their next WebSocket reconnect).
-    cur.execute(
-        """
+    cur.execute("""
         UPDATE interview_sessions
         SET interview_started_at = activated_at
         WHERE interview_started_at IS NULL AND activated_at IS NOT NULL
-        """
-    )
+        """)
     print(f"Backfilled interview_started_at for {cur.rowcount} session(s).")
     conn.commit()
 

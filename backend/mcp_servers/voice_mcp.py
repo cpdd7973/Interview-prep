@@ -145,7 +145,9 @@ FILLER_ONLY_PHRASES = {"um", "uh", "umm", "uhh"}
 FILLER_NO_SPEECH_THRESHOLD = 0.4
 AVG_LOGPROB_THRESHOLD = -1.0
 COMPRESSION_RATIO_THRESHOLD = 2.4
-COMPRESSION_RATIO_MAX_WORDS = 12  # only apply to short clips, to avoid false positives on long legitimate answers
+COMPRESSION_RATIO_MAX_WORDS = (
+    12  # only apply to short clips, to avoid false positives on long legitimate answers
+)
 
 
 def _find_repeated_phrase(words: List[str]) -> Optional[str]:
@@ -240,9 +242,9 @@ def is_hallucinated_transcript(
     if normalized in FILLER_ONLY_PHRASES:
         no_signal_available = avg_no_speech_prob is None and avg_logprob is None
         low_confidence = (
-            (avg_no_speech_prob is not None and avg_no_speech_prob > FILLER_NO_SPEECH_THRESHOLD)
-            or (avg_logprob is not None and avg_logprob < AVG_LOGPROB_THRESHOLD)
-        )
+            avg_no_speech_prob is not None
+            and avg_no_speech_prob > FILLER_NO_SPEECH_THRESHOLD
+        ) or (avg_logprob is not None and avg_logprob < AVG_LOGPROB_THRESHOLD)
         return no_signal_available or low_confidence
 
     # 4. Abnormally repetitive/low-entropy text for its length -- OpenAI's
@@ -402,10 +404,15 @@ class VoiceMCPServer:
                 else:
                     text = str(transcription).strip()
 
-                metrics = _extract_segment_metrics(getattr(transcription, "segments", None))
+                metrics = _extract_segment_metrics(
+                    getattr(transcription, "segments", None)
+                )
 
                 # Whole-clip silence gate (unchanged threshold/logic).
-                if metrics["no_speech_prob"] is not None and metrics["no_speech_prob"] > 0.7:
+                if (
+                    metrics["no_speech_prob"] is not None
+                    and metrics["no_speech_prob"] > 0.7
+                ):
                     logger.debug(
                         f"Groq Whisper detected silence (no_speech_prob="
                         f"{metrics['no_speech_prob']:.2f}): '{text}'"
@@ -455,7 +462,9 @@ class VoiceMCPServer:
                 # than a mildly relaxed pace.
                 rate = f"{random.uniform(-6, 4):+.0f}%"
 
-            communicate = edge_tts.Communicate(input_data.text, input_data.voice, rate=rate)
+            communicate = edge_tts.Communicate(
+                input_data.text, input_data.voice, rate=rate
+            )
             await communicate.save(out_path)
 
             logger.info(f"Synthesized text to {out_path}")

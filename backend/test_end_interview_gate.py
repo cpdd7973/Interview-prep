@@ -15,11 +15,18 @@ from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import HumanMessage
 
-from agents.interviewer_agent import interviewer_node, _is_end_interview_premature, determine_phase
+from agents.interviewer_agent import (
+    interviewer_node,
+    _is_end_interview_premature,
+    determine_phase,
+)
 from agents.state import InterviewState
 
 
-def _base_state(topics_covered, elapsed_minutes_patch_target="agents.interviewer_agent.calculate_elapsed_minutes"):
+def _base_state(
+    topics_covered,
+    elapsed_minutes_patch_target="agents.interviewer_agent.calculate_elapsed_minutes",
+):
     state: InterviewState = {
         "room_id": "test-room",
         "candidate_name": "Test Candidate",
@@ -75,7 +82,13 @@ def test_determine_phase_fuzzy_matches_llm_topic_labels():
     """
     skill_plan = {
         "foundation_skills": ["Python", "REST API design"],
-        "core_skills": ["Python", "REST API design", "PostgreSQL", "database indexing", "caching strategies"],
+        "core_skills": [
+            "Python",
+            "REST API design",
+            "PostgreSQL",
+            "database indexing",
+            "caching strategies",
+        ],
         "secondary_skills": ["PostgreSQL", "distributed systems"],
     }
     # LLM combined two core skills into one label, and reworded a third with
@@ -119,12 +132,17 @@ def test_premature_end_is_blocked_and_corrected():
 
     state = _base_state(topics_covered=["A", "B", "C"])
 
-    with patch("agents.interviewer_agent.llm_client.invoke_async", new=AsyncMock(side_effect=fake_invoke)), \
-         patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=10.0):
+    with patch(
+        "agents.interviewer_agent.llm_client.invoke_async",
+        new=AsyncMock(side_effect=fake_invoke),
+    ), patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=10.0):
         result = asyncio.run(interviewer_node(state))
 
     assert result.get("status") != "COMPLETED"
-    assert result["messages"][0].content == "Good question! Let's continue -- tell me about D."
+    assert (
+        result["messages"][0].content
+        == "Good question! Let's continue -- tell me about D."
+    )
 
 
 def test_premature_end_falls_back_deterministically_if_correction_also_refuses():
@@ -133,7 +151,9 @@ def test_premature_end_falls_back_deterministically_if_correction_also_refuses()
         '{"action": "end_interview", "spoken_response": "Goodbye!", '
         '"topic_covered": null, "current_phase": "wrap_up"}'
     )
-    corrective_also_ends = '{"action": "end_interview", "spoken_response": "No really, goodbye!"}'
+    corrective_also_ends = (
+        '{"action": "end_interview", "spoken_response": "No really, goodbye!"}'
+    )
     responses = iter([end_attempt, corrective_also_ends])
 
     async def fake_invoke(_messages):
@@ -141,12 +161,16 @@ def test_premature_end_falls_back_deterministically_if_correction_also_refuses()
 
     state = _base_state(topics_covered=["A", "B", "C"])
 
-    with patch("agents.interviewer_agent.llm_client.invoke_async", new=AsyncMock(side_effect=fake_invoke)), \
-         patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=5.0):
+    with patch(
+        "agents.interviewer_agent.llm_client.invoke_async",
+        new=AsyncMock(side_effect=fake_invoke),
+    ), patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=5.0):
         result = asyncio.run(interviewer_node(state))
 
     assert result.get("status") != "COMPLETED"
-    assert "D" in result["messages"][0].content  # first remaining topic, per fallback template
+    assert (
+        "D" in result["messages"][0].content
+    )  # first remaining topic, per fallback template
     assert len(result["messages"][0].content) > 0
 
 
@@ -166,8 +190,10 @@ def test_premature_end_falls_back_if_corrective_call_raises():
 
     state = _base_state(topics_covered=["A", "B", "C"])
 
-    with patch("agents.interviewer_agent.llm_client.invoke_async", new=AsyncMock(side_effect=fake_invoke)), \
-         patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=5.0):
+    with patch(
+        "agents.interviewer_agent.llm_client.invoke_async",
+        new=AsyncMock(side_effect=fake_invoke),
+    ), patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=5.0):
         result = asyncio.run(interviewer_node(state))
 
     assert result.get("status") != "COMPLETED"
@@ -187,8 +213,10 @@ def test_legitimate_end_after_minimum_and_full_coverage_is_allowed():
     # foundation ["A"] and core ["B","C"] both satisfied -> determine_phase == "secondary"
     state = _base_state(topics_covered=["A", "B", "C", "D", "E"])
 
-    with patch("agents.interviewer_agent.llm_client.invoke_async", new=AsyncMock(side_effect=fake_invoke)), \
-         patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=31.0):
+    with patch(
+        "agents.interviewer_agent.llm_client.invoke_async",
+        new=AsyncMock(side_effect=fake_invoke),
+    ), patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=31.0):
         result = asyncio.run(interviewer_node(state))
 
     assert result.get("status") == "COMPLETED"
@@ -212,8 +240,10 @@ def test_wrap_up_action_is_treated_as_end_interview():
 
     state = _base_state(topics_covered=["A", "B", "C", "D", "E"])
 
-    with patch("agents.interviewer_agent.llm_client.invoke_async", new=AsyncMock(return_value=end_attempt)), \
-         patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=31.0):
+    with patch(
+        "agents.interviewer_agent.llm_client.invoke_async",
+        new=AsyncMock(return_value=end_attempt),
+    ), patch("agents.interviewer_agent.calculate_elapsed_minutes", return_value=31.0):
         result = asyncio.run(interviewer_node(state))
 
     # Coverage is legitimate here (secondary phase), so this should complete,

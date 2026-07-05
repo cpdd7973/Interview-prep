@@ -46,7 +46,9 @@ class Settings(BaseSettings):
     early_entry_minutes: int = 5
     session_timeout_minutes: int = 60
     max_interview_duration_minutes: int = 45
-    min_interview_duration_minutes: int = 30  # hard floor enforced in interviewer_agent.py
+    min_interview_duration_minutes: int = (
+        30  # hard floor enforced in interviewer_agent.py
+    )
 
     # Email (SMTP — use Gmail App Password for simple setup)
     smtp_host: str = "smtp.gmail.com"

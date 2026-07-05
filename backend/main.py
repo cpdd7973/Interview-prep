@@ -683,9 +683,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                         ]
                     if "current_phase" in agent_result:
                         chat_state["current_phase"] = agent_result["current_phase"]
-                        jd_state_update["current_phase"] = agent_result[
-                            "current_phase"
-                        ]
+                        jd_state_update["current_phase"] = agent_result["current_phase"]
                     if jd_state_update:
                         await asyncio.to_thread(
                             session_mcp.update_interview_state,
@@ -1048,9 +1046,7 @@ async def interview_websocket(websocket: WebSocket, room_id: str):
                                     # Graph ended in an unexpected state -- don't
                                     # silently mark it complete.
                                     session.status = SessionStatus.EVALUATION_FAILED
-                                    session.pipeline_error = (
-                                        f"Pipeline ended in unexpected status: {result_status}"
-                                    )
+                                    session.pipeline_error = f"Pipeline ended in unexpected status: {result_status}"
                                     logger.error(
                                         f"❌ Post-interview pipeline for {room_id} ended in "
                                         f"unexpected status: {result_status}"
