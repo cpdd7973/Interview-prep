@@ -114,9 +114,7 @@ export const cancelInterview = async (roomId) => {
 export const getQuestionsByRole = async (role) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/questions?role=${role}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -137,9 +135,7 @@ export const addQuestion = async (questionData) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/questions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(questionData),
     });
 
@@ -160,9 +156,7 @@ export const addQuestion = async (questionData) => {
 export const getEvaluationReport = async (roomId) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/evaluations/${roomId}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {

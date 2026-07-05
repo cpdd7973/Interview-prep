@@ -10,7 +10,7 @@
  * - CANCELLED: Interview was cancelled
  */
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import CountdownTimer from '../components/CountdownTimer';
 import WaitingScreen from '../components/WaitingScreen';
 import VoiceIndicator from '../components/VoiceIndicator';
@@ -37,6 +37,11 @@ const EARLY_ENTRY_SECONDS = 5 * 60; // 5 minutes
 const InterviewRoom = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // QA/admin escape hatch: ?debug=1 shows the timer/counter/mic diagnostics
+  // that are otherwise hidden from candidates so the room feels like a real
+  // conversation rather than a quiz/form.
+  const showDiagnostics = searchParams.get('debug') === '1';
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [roomState, setRoomState] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +56,10 @@ const InterviewRoom = () => {
   const pollTimerRef = useRef(null);
   const abortControllerRef = useRef(null);
   const wsRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimeoutRef = useRef(null);
+  const intentionalCloseRef = useRef(false);
+  const [reconnectError, setReconnectError] = useState(null);
   const mediaRecorderRef = useRef(null);
   const recognitionStoppedRef = useRef(false);
   const pendingTranscriptRef = useRef(null);
@@ -153,7 +162,11 @@ const InterviewRoom = () => {
     if (forceCompleted) return 'COMPLETED';
 
     if (status === 'ACTIVE' || status === 'DISCONNECTED') {
-      if (finished_at) return 'COMPLETED';
+      // Don't show the finished screen while the AI's final response is
+      // still playing -- finished_at is set in the DB as soon as the LLM
+      // decides to end, well before TTS playback actually completes, and
+      // this polling-derived status update can otherwise race ahead of it.
+      if (finished_at && !isAISpeaking) return 'COMPLETED';
       return 'ACTIVE'; // Treat DISCONNECTED as ACTIVE for the room UI to allow reconnections
     }
     if (status === 'COMPLETED') return 'COMPLETED';
@@ -410,7 +423,7 @@ const InterviewRoom = () => {
     if ((viewState !== 'ACTIVE' && viewState !== 'READY') || !isAIOptedIn) return;
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    
+
     // Robust WebSocket URL construction
     let wsUrl;
     if (import.meta.env.VITE_API_BASE_URL) {
@@ -421,31 +434,17 @@ const InterviewRoom = () => {
       wsUrl = `${wsProtocol}//${window.location.host}/api/interviews/${roomId}/ws`;
     }
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const BASE_RECONNECT_DELAY_MS = 1000;
+    const MAX_RECONNECT_DELAY_MS = 15000;
+
+    intentionalCloseRef.current = false;
+    reconnectAttemptsRef.current = 0;
+    setReconnectError(null);
 
     // ── Dmitri's Pattern: WebSocket heartbeat every 15s ──
     let heartbeatInterval = null;
 
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-      setSystemStatus("Connected. Synchronizing with AI...");
-      // Signal backend that frontend is ready
-      ws.send(JSON.stringify({ type: 'start' }));
-
-      // Dmitri: heartbeat keeps connection alive
-      heartbeatInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 15000);
-
-      // Only acquire mic stream — do NOT start recording yet.
-      // Recording starts after the AI greeting finishes playing
-      // (handled by the isAISpeaking effect below).
-      initMicStream();
-    };
-    
     // ── Helper: Browser TTS with Hard Timeout Safety Net (CORE Rule #7) ──
     const _speakWithSafetyNet = (text) => {
       if (!text || !window.speechSynthesis) {
@@ -479,109 +478,171 @@ const InterviewRoom = () => {
       window.speechSynthesis.speak(utterance);
     };
 
-    ws.onmessage = async (event) => {
-      if (event.data instanceof Blob) {
-        // AI Audio response received
-        setIsAISpeaking(true);
-        setLastAudioReceivedAt(Date.now());
-        
-        // Clear fallback timer if it exists
-        if (ttsFallbackTimerRef.current) {
-          console.log("[VOICE] 🛑 Binary audio received. Clearing browser TTS fallback timer.");
-          clearTimeout(ttsFallbackTimerRef.current);
-          ttsFallbackTimerRef.current = null;
-        }
+    // Establishes one WebSocket connection. Called on initial mount and
+    // again from onclose (with backoff) if the connection drops
+    // unexpectedly, so it can rejoin the same room without re-greeting
+    // (the backend restores messages/skill_plan/phase from the DB).
+    function connectWebSocket() {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-        // Hard fix for double-voice: Stop any ongoing browser synthesis immediately
-        if (window.speechSynthesis && window.speechSynthesis.speaking) {
-          console.warn("[VOICE] 🔇 Stopping ongoing browser TTS to play backend audio.");
-          window.speechSynthesis.cancel();
-        }
+      ws.onopen = () => {
+        console.log("WebSocket connected");
+        reconnectAttemptsRef.current = 0;
+        setReconnectError(null);
+        setSystemStatus("Connected. Synchronizing with AI...");
+        // Signal backend that frontend is ready
+        ws.send(JSON.stringify({ type: 'start' }));
 
-        const audioUrl = URL.createObjectURL(event.data);
-        const audio = new Audio(audioUrl);
-
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          setTimeout(() => {
-            setIsAISpeaking(false);
-          }, 500);
-        };
-
-        try {
-          await audio.play();
-        } catch (e) {
-          console.error("Audio playback failed:", e);
-          setIsAISpeaking(false);
-        }
-      } else {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket Message:", data);
-        
-        if (data.type === 'connection_ready') {
-          console.log("Backend signal: Connection ready.");
-          setSystemStatus(data.rejoined ? "Re-connected to active session." : "AI Agent is ready.");
-        } else if (data.type === 'status') {
-          setSystemStatus(data.text);
-        } else if (data.type === 'transcript') {
-          setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
-          
-          if (data.speaker === 'AI') {
-            setSystemStatus(""); // Clear warming-up status once AI speaks
-            setIsAISpeaking(true); 
-            lastAITextRef.current = data.text;
-            
-            // Clear any existing timer from a previous partial message
-            if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
-            
-            ttsFallbackTimerRef.current = setTimeout(() => {
-              // Safety check: is the browser still waiting for audio?
-              if (ttsFallbackTimerRef.current) {
-                console.warn("⚠️ Backend TTS fallback triggered after 5s timeout.");
-                _speakWithSafetyNet(data.text);
-                ttsFallbackTimerRef.current = null;
-              }
-            }, 5000); // Increased from 2.5s to 5s for stability
+        // Dmitri: heartbeat keeps connection alive
+        heartbeatInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
           }
-        } else if (data.type === 'interview_complete') {
-          console.log("🎉 Interview completed signal received.");
-          setPendingCompletion(true);
-        } else if (data.type === 'audio_failed') {
-          console.warn("⚠️ AI Audio generation failed. Using browser TTS fallback.");
-          setSystemStatus("");
-          // Clear the delayed fallback timer — we'll trigger TTS immediately
+        }, 15000);
+
+        // Only acquire mic stream — do NOT start recording yet.
+        // Recording starts after the AI greeting finishes playing
+        // (handled by the isAISpeaking effect below).
+        initMicStream();
+      };
+
+      ws.onmessage = async (event) => {
+        if (event.data instanceof Blob) {
+          // AI Audio response received
+          setIsAISpeaking(true);
+          setLastAudioReceivedAt(Date.now());
+
+          // Clear fallback timer if it exists
           if (ttsFallbackTimerRef.current) {
+            console.log("[VOICE] 🛑 Binary audio received. Clearing browser TTS fallback timer.");
             clearTimeout(ttsFallbackTimerRef.current);
             ttsFallbackTimerRef.current = null;
           }
-          // Immediately use browser TTS with hard timeout safety net
-          const aiText = lastAITextRef.current;
-          if (aiText && window.speechSynthesis) {
-            _speakWithSafetyNet(aiText);
-          } else {
+
+          // Hard fix for double-voice: Stop any ongoing browser synthesis immediately
+          if (window.speechSynthesis && window.speechSynthesis.speaking) {
+            console.warn("[VOICE] 🔇 Stopping ongoing browser TTS to play backend audio.");
+            window.speechSynthesis.cancel();
+          }
+
+          const audioUrl = URL.createObjectURL(event.data);
+          const audio = new Audio(audioUrl);
+
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            setTimeout(() => {
+              setIsAISpeaking(false);
+            }, 500);
+          };
+
+          try {
+            await audio.play();
+          } catch (e) {
+            console.error("Audio playback failed:", e);
             setIsAISpeaking(false);
           }
-        } else if (data.type === 'pong') {
-          // Heartbeat response
-        }
-      }
-    };
+        } else {
+          const data = JSON.parse(event.data);
+          console.log("WebSocket Message:", data);
 
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-      if (recordingCycleRef.current) clearTimeout(recordingCycleRef.current);
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-    };
+          if (data.type === 'connection_ready') {
+            console.log("Backend signal: Connection ready.");
+            setSystemStatus(data.rejoined ? "Re-connected to active session." : "AI Agent is ready.");
+          } else if (data.type === 'status') {
+            setSystemStatus(data.text);
+          } else if (data.type === 'transcript') {
+            setMessages(prev => [...prev, { speaker: data.speaker, text: data.text }]);
+
+            if (data.speaker === 'AI') {
+              setSystemStatus(""); // Clear warming-up status once AI speaks
+              setIsAISpeaking(true);
+              lastAITextRef.current = data.text;
+
+              // Clear any existing timer from a previous partial message
+              if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
+
+              ttsFallbackTimerRef.current = setTimeout(() => {
+                // Safety check: is the browser still waiting for audio?
+                if (ttsFallbackTimerRef.current) {
+                  console.warn("⚠️ Backend TTS fallback triggered after 5s timeout.");
+                  _speakWithSafetyNet(data.text);
+                  ttsFallbackTimerRef.current = null;
+                }
+              }, 5000); // Increased from 2.5s to 5s for stability
+            }
+          } else if (data.type === 'interview_complete') {
+            console.log("🎉 Interview completed signal received.");
+            // Backend closes the socket shortly after this; don't treat
+            // that as a dropped connection needing a reconnect.
+            intentionalCloseRef.current = true;
+            setPendingCompletion(true);
+          } else if (data.type === 'audio_failed') {
+            console.warn("⚠️ AI Audio generation failed. Using browser TTS fallback.");
+            setSystemStatus("");
+            // Clear the delayed fallback timer — we'll trigger TTS immediately
+            if (ttsFallbackTimerRef.current) {
+              clearTimeout(ttsFallbackTimerRef.current);
+              ttsFallbackTimerRef.current = null;
+            }
+            // Immediately use browser TTS with hard timeout safety net
+            const aiText = lastAITextRef.current;
+            if (aiText && window.speechSynthesis) {
+              _speakWithSafetyNet(aiText);
+            } else {
+              setIsAISpeaking(false);
+            }
+          } else if (data.type === 'pong') {
+            // Heartbeat response
+          }
+        }
+      };
+
+      ws.onerror = (err) => {
+        // The browser fires onclose right after onerror for connection
+        // failures, so reconnect scheduling lives in onclose only —
+        // this just gets the failure into the console for diagnostics.
+        console.error("WebSocket error:", err);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected");
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (recordingCycleRef.current) clearTimeout(recordingCycleRef.current);
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+
+        if (intentionalCloseRef.current) return;
+
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          const attempt = reconnectAttemptsRef.current;
+          const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
+          reconnectAttemptsRef.current += 1;
+          setSystemStatus(`Connection lost. Reconnecting (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, delay);
+        } else {
+          setSystemStatus("");
+          setReconnectError("Lost connection to the interview server and could not reconnect. Please refresh the page.");
+        }
+      };
+    }
+
+    connectWebSocket();
 
     return () => {
+      intentionalCloseRef.current = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (recordingCycleRef.current) clearTimeout(recordingCycleRef.current);
       if (micLevelIntervalRef.current) clearInterval(micLevelIntervalRef.current);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
@@ -727,9 +788,11 @@ const InterviewRoom = () => {
           </div>
 
           <div className="active-header-center">
-            <div style={{ color: '#e2e8f0', fontSize: '14px', background: 'rgba(0,0,0,0.2)', padding: '6px 16px', borderRadius: '15px', fontWeight: '500' }}>
-              Progress: Question {Math.max(1, Math.floor(messages.filter(m => m && m.speaker && m.speaker.toLowerCase() === 'ai').length))} of ~5
-            </div>
+            {showDiagnostics && (
+              <div style={{ color: '#e2e8f0', fontSize: '14px', background: 'rgba(0,0,0,0.2)', padding: '6px 16px', borderRadius: '15px', fontWeight: '500' }}>
+                Progress: Question {Math.max(1, Math.floor(messages.filter(m => m && m.speaker && m.speaker.toLowerCase() === 'ai').length))} of ~5
+              </div>
+            )}
           </div>
 
           <div className="active-header-right">
@@ -744,7 +807,7 @@ const InterviewRoom = () => {
                 borderRadius: '50%', display: 'inline-block'
               }} />
               <span style={{ fontSize: '14px', fontWeight: '500', color: '#e2e8f0' }}>Live</span>
-              <ActiveTimer />
+              {showDiagnostics && <ActiveTimer />}
             </div>
           </div>
         </div>
@@ -768,35 +831,37 @@ const InterviewRoom = () => {
             style={{ zIndex: 900 }}
           ></div>
           
-          {/* Floating Diagnostic Dashboard (Visible in Active room) */}
-          <div className="diagnostic-badge" style={{
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(5px)',
-            padding: '8px 12px',
-            borderRadius: '12px',
-            fontSize: '11px',
-            color: 'white',
-            display: 'flex',
-            gap: '15px',
-            border: '1px solid rgba(255,255,255,0.1)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                background: micActive ? '#4ade80' : '#64748b',
-                boxShadow: micActive ? '0 0 8px #4ade80' : 'none'
-              }}></div>
-              <span>Mic: {micActive ? 'CAPTURING' : 'IDLE'}</span>
+          {/* Floating Diagnostic Dashboard (QA/admin only -- ?debug=1) */}
+          {showDiagnostics && (
+            <div className="diagnostic-badge" style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(5px)',
+              padding: '8px 12px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              color: 'white',
+              display: 'flex',
+              gap: '15px',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: micActive ? '#4ade80' : '#64748b',
+                  boxShadow: micActive ? '0 0 8px #4ade80' : 'none'
+                }}></div>
+                <span>Mic: {micActive ? 'CAPTURING' : 'IDLE'}</span>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px' }}>
+                <span>Out: {(bytesSent / 1024).toFixed(1)} KB</span>
+              </div>
             </div>
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px' }}>
-              <span>Out: {(bytesSent / 1024).toFixed(1)} KB</span>
-            </div>
-          </div>
+          )}
 
           {/* Left Sidebar: Transcript + Text Input (Priya's pattern) */}
           <div className={`chat-container ${isChatVisible ? 'open' : ''}`} style={{
@@ -896,6 +961,21 @@ const InterviewRoom = () => {
             </div>
 
             <div style={{ textAlign: 'center', maxWidth: '600px' }}>
+            {reconnectError && (
+              <div style={{
+                marginTop: '-20px',
+                marginBottom: '16px',
+                padding: '10px 16px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#fca5a5',
+                fontSize: '14px',
+                fontWeight: '500',
+              }}>
+                ⚠️ {reconnectError}
+              </div>
+            )}
             {/* NEW: System/AI Status Feedback */}
             {systemStatus && (
               <div style={{
@@ -916,24 +996,28 @@ const InterviewRoom = () => {
               </div>
             )}
               <h3 style={{ margin: '0 0 10px 0', fontSize: '24px', color: '#e2e8f0', fontWeight: '600' }}>{roomState.interviewer_designation}</h3>
-              <p style={{
-                fontSize: '18px', color: '#a0aec0', lineHeight: '1.6',
-                backgroundColor: '#2d3748', padding: '20px', borderRadius: '12px'
-              }}>
-                {isAISpeaking ? "AI is speaking..." : "AI is listening to your response..."}
-              </p>
-              {/* Mic Level Indicator — helps verify the mic is working */}
-              {!isAISpeaking && (
+              {(showDiagnostics || !isAISpeaking) && (
+                <p style={{
+                  fontSize: '18px', color: '#a0aec0', lineHeight: '1.6',
+                  backgroundColor: '#2d3748', padding: '20px', borderRadius: '12px'
+                }}>
+                  {showDiagnostics
+                    ? (isAISpeaking ? "AI is speaking..." : "AI is listening to your response...")
+                    : "Your turn"}
+                </p>
+              )}
+              {/* Mic Level Indicator — QA/admin only, helps verify the mic is working */}
+              {showDiagnostics && !isAISpeaking && (
                 <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', width: '100%' }}>
                     <span style={{ fontSize: '13px', color: '#a0aec0' }}>🎙️ Level:</span>
                     <div style={{ width: '180px', height: '10px', backgroundColor: '#1a202c', borderRadius: '5px', overflow: 'hidden', position: 'relative' }}>
                       {/* Threshold Marker */}
-                      <div style={{ 
-                        position: 'absolute', left: `${3 * 3.3}%`, top: 0, bottom: 0, width: '2px', 
-                        backgroundColor: 'rgba(255,255,255,0.4)', zIndex: 2 
+                      <div style={{
+                        position: 'absolute', left: `${3 * 3.3}%`, top: 0, bottom: 0, width: '2px',
+                        backgroundColor: 'rgba(255,255,255,0.4)', zIndex: 2
                       }} title="VAD Threshold" />
-                      
+
                       <div style={{
                         width: `${Math.min(micLevel * 3.3, 100)}%`,
                         height: '100%',
@@ -986,6 +1070,7 @@ const InterviewRoom = () => {
             onClick={() => {
               if (showLeaveConfirm) {
                 console.log("[ROOM] 🚪 Confirmed leave. Navigating to dashboard...");
+                intentionalCloseRef.current = true;
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                   wsRef.current.close();
                 }

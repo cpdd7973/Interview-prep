@@ -81,6 +81,7 @@ class SessionMCPServer:
             "create_session": self.create_session,
             "get_session": self.get_session,
             "update_status": self.update_status,
+            "update_interview_state": self.update_interview_state,
             "arm_scheduler_job": self.arm_scheduler_job,
             "cancel_scheduler_job": self.cancel_scheduler_job,
             "log_transcript_chunk": self.log_transcript_chunk,
@@ -173,28 +174,38 @@ class SessionMCPServer:
                 sched_time = sched_time.replace(tzinfo=timezone.utc)
             seconds_remaining = (sched_time - now).total_seconds()
 
-            # Fetch transcript chunks for this session
-            chunks = (
-                db.query(TranscriptChunk)
-                .filter(TranscriptChunk.room_id == room_id)
-                .order_by(TranscriptChunk.timestamp)
-                .all()
-            )
-
-            transcript_list = [
-                {
-                    "speaker": chunk.speaker.value,
-                    "text": chunk.content,
-                    "timestamp": chunk.timestamp.isoformat() + "Z",
-                }
-                for chunk in chunks
-            ]
+            # This route is unauthenticated by design (room_id is the
+            # candidate's credential), so only fetch/return the transcript
+            # while the interview is actually in progress -- that's the one
+            # legitimate candidate-side need (rehydrating the chat on a
+            # refresh, see frontend InterviewRoom.jsx). Once the session is
+            # COMPLETED/EXPIRED/CANCELLED, the transcript stays private to
+            # the authenticated /transcript and /evaluations routes instead
+            # of remaining fetchable forever by anyone who still has the
+            # room_id.
+            transcript_list = []
+            if session.status in (SessionStatus.ACTIVE, SessionStatus.DISCONNECTED):
+                chunks = (
+                    db.query(TranscriptChunk)
+                    .filter(TranscriptChunk.room_id == room_id)
+                    .order_by(TranscriptChunk.timestamp)
+                    .all()
+                )
+                transcript_list = [
+                    {
+                        "speaker": chunk.speaker.value,
+                        "text": chunk.content,
+                        "timestamp": chunk.timestamp.isoformat() + "Z",
+                    }
+                    for chunk in chunks
+                ]
 
             return {
                 "success": True,
                 "room_id": session.room_id,
                 "candidate_name": session.candidate.name,
-                "candidate_email": session.candidate.email,
+                # candidate_email intentionally omitted -- this route is
+                # unauthenticated and the frontend never reads this field.
                 "job_role": session.job_role,
                 "company": session.company,
                 "interviewer_designation": session.interviewer_designation,
@@ -298,6 +309,49 @@ class SessionMCPServer:
         except Exception as e:
             db.rollback()
             logger.error(f"❌ Error updating status for {room_id}: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            db.close()
+
+    def update_interview_state(
+        self,
+        room_id: str,
+        skill_plan: Optional[dict] = None,
+        topics_covered: Optional[list] = None,
+        current_phase: Optional[str] = None,
+        interview_started_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Persist JD-aware interview progress (skill plan, topic coverage,
+        phase, start time) so a WebSocket reconnect can restore it instead
+        of resetting it. Only fields explicitly passed are written.
+        """
+        db: Session = SessionLocal()
+        try:
+            session = (
+                db.query(InterviewSession)
+                .filter(InterviewSession.room_id == room_id)
+                .first()
+            )
+            if not session:
+                return {"success": False, "error": "Session not found"}
+
+            if skill_plan is not None:
+                session.skill_plan = skill_plan
+            if topics_covered is not None:
+                session.topics_covered = topics_covered
+            if current_phase is not None:
+                session.current_phase = current_phase
+            if interview_started_at is not None:
+                session.interview_started_at = datetime.fromisoformat(
+                    interview_started_at.replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+
+            db.commit()
+            return {"success": True, "room_id": room_id}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ Error updating interview state for {room_id}: {e}")
             return {"success": False, "error": str(e)}
         finally:
             db.close()

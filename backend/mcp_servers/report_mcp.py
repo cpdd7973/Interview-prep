@@ -26,6 +26,15 @@ from mcp_servers.gmail_mcp import gmail_mcp, SendEmailInput
 
 logger = logging.getLogger(__name__)
 
+# (score_key, criteria_reasoning key, display label) -- order matches the scores table above
+DIMENSION_LABELS = [
+    ("technical_score", "technical", "Technical Knowledge"),
+    ("communication_score", "communication", "Communication Clarity"),
+    ("problem_solving_score", "problem_solving", "Problem Solving"),
+    ("behavioral_score", "behavioral", "Behavioral Fit"),
+    ("confidence_score", "confidence", "Confidence & Completeness"),
+]
+
 
 # Input Schemas
 class CompileReportInput(BaseModel):
@@ -269,6 +278,59 @@ class ReportMCPServer:
             )
             elements.append(ot)
             elements.append(Spacer(1, 20))
+
+            # === DETAILED ASSESSMENT (per-dimension reasoning) ===
+            criteria_reasoning = eval_data.get("criteria_reasoning", {}) or {}
+            if criteria_reasoning:
+                elements.append(Paragraph("Detailed Assessment", heading_style))
+                elements.append(
+                    HRFlowable(
+                        width="100%", thickness=1, color=colors.HexColor("#e2e8f0")
+                    )
+                )
+                elements.append(Spacer(1, 8))
+
+                dim_heading_style = ParagraphStyle(
+                    "DimHeading",
+                    parent=styles["Normal"],
+                    fontSize=10.5,
+                    fontName="Helvetica-Bold",
+                    textColor=colors.HexColor("#1e293b"),
+                    spaceBefore=10,
+                    spaceAfter=2,
+                )
+                bullet_style = ParagraphStyle(
+                    "Bullet",
+                    parent=styles["Normal"],
+                    fontSize=9.5,
+                    leading=13,
+                    leftIndent=14,
+                    bulletIndent=2,
+                    textColor=colors.HexColor("#334155"),
+                    spaceAfter=2,
+                )
+
+                score_lookup = {
+                    "technical_score": tech,
+                    "communication_score": comm,
+                    "problem_solving_score": prob,
+                    "behavioral_score": behav,
+                    "confidence_score": conf,
+                }
+                for score_key, reasoning_key, label in DIMENSION_LABELS:
+                    bullets = criteria_reasoning.get(reasoning_key) or []
+                    if not bullets:
+                        continue
+                    dim_score = score_lookup.get(score_key, 0)
+                    elements.append(
+                        Paragraph(
+                            f"{label} &mdash; {dim_score:.1f}/10", dim_heading_style
+                        )
+                    )
+                    for bullet in bullets:
+                        safe = str(bullet).replace("<", "&lt;").replace(">", "&gt;")
+                        elements.append(Paragraph(f"•  {safe}", bullet_style))
+                elements.append(Spacer(1, 16))
 
             # === QUALITATIVE FEEDBACK ===
             elements.append(Paragraph("Qualitative Feedback", heading_style))

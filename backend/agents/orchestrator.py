@@ -27,6 +27,17 @@ def route_after_interview(state: InterviewState) -> str:
     return END
 
 
+def route_after_evaluation(state: InterviewState) -> str:
+    """
+    Decides where to go after the evaluator node finishes.
+    A failed evaluation must not proceed to report generation --
+    there's no evaluation data for the report to consume.
+    """
+    if state.get("status") == "EVALUATION_FAILED":
+        return END
+    return "report"
+
+
 def create_interview_graph() -> StateGraph:
     """
     Builds and compiles the LangGraph for the interview system.
@@ -62,8 +73,8 @@ def create_interview_graph() -> StateGraph:
     # Interviewer routes conditionally
     workflow.add_conditional_edges("interviewer", route_after_interview)
 
-    # Evaluator always goes to report
-    workflow.add_edge("evaluator", "report")
+    # Evaluator routes conditionally -- a failed evaluation skips report
+    workflow.add_conditional_edges("evaluator", route_after_evaluation)
 
     # Report ends the workflow
     workflow.add_edge("report", END)

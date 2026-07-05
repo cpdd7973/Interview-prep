@@ -45,25 +45,79 @@ EVALUATION DIMENSIONS (Score each 0-10):
    - Admitting knowledge gaps appropriately
    - Overall interview presence
 
-SCORING GUIDELINES:
-- 9-10: Exceptional, exceeds expectations significantly
-- 7-8: Strong, meets and exceeds expectations
-- 5-6: Adequate, meets basic expectations
-- 3-4: Below expectations, significant gaps
-- 0-2: Poor, major deficiencies
+SCORING GUIDELINES — BE STRICT. Most candidates should NOT score in the 7-10 range.
+Scores must be earned through demonstrated evidence in the transcript, not inferred from confidence or fluency alone.
+
+- 9-10 (Exceptional): Reserve for answers essentially interchangeable with the ideal_answer in substance —
+  correct, complete, precise technical depth, proactively covers edge cases/tradeoffs the question didn't
+  explicitly ask for. This band should be RARE. If unsure whether an answer qualifies, it does not — score
+  it 8 or below.
+- 7-8 (Strong): Technically correct and complete, matches the core of the ideal_answer, but missing at
+  least one edge case, tradeoff, or nuance a senior practitioner would mention. Communication is clear and
+  well-structured with no material rambling.
+- 5-6 (Adequate): Directionally correct but shallow, generic, or missing significant parts of the
+  ideal_answer. Gets the "what" but not the "why". Some vagueness or padding is present. This is the
+  default band for a competent-but-unremarkable answer — do NOT round this up to 7 out of politeness.
+- 3-4 (Below expectations): Partially correct at best, notable factual errors or gaps versus the
+  ideal_answer, answer is vague/generic enough that it could apply to almost any question, or relies on
+  buzzwords without substantiation.
+- 0-2 (Poor): Wrong, off-topic, refused/deflected, or so vague/rambling that no real technical or
+  behavioral content can be extracted.
+
+MANDATORY SCORING PROCEDURE — apply this for every dimension, every question:
+1. For each answered question, compare the candidate's answer against that question's ideal_answer from
+   the QUESTION BANK REFERENCE below. Identify concretely what was covered, what was missing, and what was
+   wrong. An answer that never engages with the substance of the ideal_answer cannot score above 4 on
+   TECHNICAL KNOWLEDGE or PROBLEM-SOLVING regardless of how confidently it was delivered.
+2. Penalize vagueness and rambling explicitly: answers that are long but low-information (buzzword-heavy,
+   repetitive, no concrete example/mechanism/number), or that talk around a topic without answering it,
+   must be scored lower on COMMUNICATION CLARITY and on the dimension the question targets — even if the
+   candidate sounded confident or fluent. Confidence and completeness are a separate axis (dimension 5);
+   do not let a confident delivery inflate the other four dimensions.
+3. Do not default to the middle of the scale. If evidence is thin (e.g. very few substantive answers,
+   short transcript), that is itself a basis for a LOWER score, not a neutral 5-6 — the burden of proof is
+   on the transcript to justify a high score, not on you to justify a low one.
+4. Where question_bank has no ideal_answer ("Not specified."), score technical accuracy against general
+   industry best practice for the stated job_role, applying the same strictness above.
 
 OVERALL SCORE:
 Do NOT calculate an overall score yourself. The system will handle this mathematically. Just provide the individual dimensions.
 
 QUALITATIVE FEEDBACK:
-Provide a 3-4 paragraph summary covering:
-1. Key strengths demonstrated
-2. Areas for improvement
-3. Specific examples from the interview
-4. Hiring recommendation (Strong Yes / Yes / Maybe / No)
+Provide a SHORT 2-3 sentence overall verdict: one sentence on the dominant strength (if any genuinely
+stands out), one sentence on the dominant weakness/risk, one sentence with a hiring recommendation
+(Strong Yes / Yes / Maybe / No). Do NOT repeat the detailed per-dimension reasoning here — that goes in
+criteria_reasoning below.
 
-Be fair, objective, and constructive in your evaluation.
-Focus on evidence from the transcript, not assumptions.
+PER-DIMENSION REASONING (criteria_reasoning):
+For EACH of the 5 dimensions, provide 2-4 short bullet points (each one sentence, under ~20 words)
+explaining the score you gave. Bullets must cite specific, concrete evidence from the transcript (what the
+candidate said or failed to say), not generic restatements of the score band. At least one bullet per
+dimension should name a specific gap versus the ideal_answer where applicable, unless the score is 9-10.
+Use these exact keys: technical, communication, problem_solving, behavioral, confidence.
+
+Be fair and evidence-based, but do not be lenient. Focus strictly on evidence from the transcript, not
+assumptions or good faith inference.
+
+RESPONSE FORMAT:
+Return ONLY a valid JSON object, no other text, matching exactly this shape:
+{{
+  "technical_score": <0-10 number>,
+  "communication_score": <0-10 number>,
+  "problem_solving_score": <0-10 number>,
+  "behavioral_score": <0-10 number>,
+  "confidence_score": <0-10 number>,
+  "qualitative_feedback": "<2-3 sentence overall verdict>",
+  "criteria_reasoning": {{
+    "technical": ["<bullet>", "<bullet>"],
+    "communication": ["<bullet>", "<bullet>"],
+    "problem_solving": ["<bullet>", "<bullet>"],
+    "behavioral": ["<bullet>", "<bullet>"],
+    "confidence": ["<bullet>", "<bullet>"]
+  }}
+}}
+
+Do not include overall_score in your JSON.
 
 TRANSCRIPT TO EVALUATE:
 {transcript}

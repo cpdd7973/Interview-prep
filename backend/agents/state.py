@@ -37,5 +37,20 @@ class InterviewState(TypedDict):
     questions_state: Dict[int, str]
     evaluation: Optional[Dict[str, Any]]
 
+    # JD-aware interview tracking
+    skill_plan: Optional[Dict[str, List[str]]]  # Extracted from JD at start
+    topics_covered: List[str]  # Skills assessed so far
+    current_phase: str  # introduction|foundation|core|secondary|wrap_up
+    interview_started_at: Optional[str]  # ISO timestamp for 30-min tracking
+
+    # Adaptive difficulty tracking -- transient (not persisted to the DB), a
+    # reconnect losing a turn or two of "difficulty momentum" is a minor UX
+    # blip, not a correctness bug worth a schema change.
+    recent_scores: List[int]  # last few score_of_last_answer values, most recent last
+
+    # Post-interview pipeline output
+    report_path: Optional[str]
+    email_failed: Optional[bool]
+
     # Error state
     error: Optional[str]

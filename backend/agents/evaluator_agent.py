@@ -85,11 +85,16 @@ async def evaluator_node(state: InterviewState) -> Dict[str, Any]:
 
     if not eval_resp.get("success"):
         logger.error(f"❌ Evaluator failed: {eval_resp.get('error')}")
-        return {"error": f"Evaluation failed: {eval_resp.get('error')}"}
+        return {
+            "status": "EVALUATION_FAILED",
+            "error": f"Evaluation failed: {eval_resp.get('error')}",
+            "evaluation": None,
+        }
 
     evaluation_data = {
         "scores": eval_resp.get("scores", {}),
         "feedback": eval_resp.get("feedback", ""),
+        "criteria_reasoning": eval_resp.get("criteria_reasoning", {}),
     }
 
     # Save to SQLite
@@ -110,6 +115,7 @@ async def evaluator_node(state: InterviewState) -> Dict[str, Any]:
                 confidence_score=evaluation_data["scores"].get("confidence_score", 0),
                 overall_score=evaluation_data["scores"].get("overall_score", 0),
                 qualitative_feedback=evaluation_data["feedback"],
+                criteria_reasoning=evaluation_data["criteria_reasoning"],
             )
             # Find and delete old if needed (or assume 1-1)
             existing = (
